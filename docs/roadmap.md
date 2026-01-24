@@ -63,30 +63,89 @@ FastMCP ProxyProvider 的 Session Isolation 设计意味着每个请求可获得
 
 ### P1 - 高优先级
 
-#### 3. 📦 TOON 格式压缩
-**状态**：待开发  
-**描述**：当 `exec` 返回的结果是 JSON 数据时，使用 [TOON 格式](https://github.com/toon-format/toon) 进行压缩，减少 token 消耗。
+#### 3. 🖼️ 多模态内容支持（图片/资源）
+**状态**：待开发
+**描述**：支持透传 MCP 服务器的图片、资源等多模态内容类型。
 
 **背景**：
-TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格式：
-- 比 JSON 节省约 40% token
-- 对表格数据压缩效果尤佳（统一结构的对象数组）
-- 保持可读性和无损转换
+当前 `exec` 工具返回类型为 `str`，导致下游返回的图片内容被 JSON 序列化，AI 无法直接显示：
+- Playwright 截图：`{"type": "image", "data": "base64...", "mimeType": "image/png"}`
+- 计算机视觉工具：分析结果 + 标注图片
+- 文件资源：PDF、图片等二进制内容
+
+**MCP 协议内容类型**：
+```python
+# 文本内容
+{"type": "text", "text": "..."}
+
+# 图片内容
+{"type": "image", "data": "base64...", "mimeType": "image/png"}
+
+# 资源内容
+{"type": "resource", "uri": "file://...", "mimeType": "..."}
+```
 
 **实现要点**：
-- 添加 `toon_format` Python 依赖
-- 在 `exec` 返回结果时检测 JSON 数据
-- 对符合条件的数据进行 TOON 编码
-- 可配置开关（`enable_toon_compression: bool`）
-- 在返回结果中标注格式类型
+- `exec` 返回类型改为 `str | TextContent | ImageContent | list[TextContent | ImageContent]`
+- `Executor._extract_result_data()` 识别并透传 MCP 内容块
+- 纯 JSON 数据继续使用 TOON 压缩
+- 保持向后兼容：纯文本返回不受影响
 
-**注意事项**：
-- TOON 对深度嵌套 / 非结构化数据效果不佳，需评估适用场景
-- 需确保 AI 客户端能正确解析 TOON 格式
+**影响范围**：
+- `src/mcpx/executor.py`：内容提取和透传逻辑
+- `src/mcpx/__main__.py`：`exec` 工具返回类型
+
+**收益**：
+- 支持 Playwright 等工具的截图功能
+- 支持计算机视觉工具的图片返回
+- 完整透传 MCP 多模态内容
 
 ---
 
-#### 4. 💓 健康检查与心跳
+#### 4. 📦 Schema 类型压缩（TypeScript 风格）
+**状态**：待开发
+**描述**：将工具的 `input_schema` 转换为 TypeScript 类型定义语法，减少 schema 的 token 消耗。
+
+**背景**：
+JSON Schema 格式冗长，TOON 格式对深度嵌套的 schema 效果不佳：
+
+```typescript
+// JSON Schema（约 200 字符）
+{
+  "type": "object",
+  "properties": {
+    "path": {"type": "string"},
+    "tail": {"type": "number", "optional": true}
+  },
+  "required": ["path"]
+}
+
+// TypeScript 类型（约 40 字符）
+{path: string; tail?: number;}
+```
+
+**优势**：
+- 节省约 60-70% token
+- LLM 对 TypeScript 语法高度熟悉，解析准确
+- 可读性强，结构清晰
+
+**实现要点**：
+- 检测 `input_schema` 字段
+- 将 JSON Schema 转换为 TypeScript 类型定义
+- 支持基础类型：`string` / `number` / `boolean` / `array[]` / `object`
+- 支持可选字段（`?:`）和联合类型（`|`）
+- 可配置开关（`enable_schema_compression: bool`）
+
+**压缩策略分层**：
+| 数据类型 | 压缩方式 | 原因 |
+|---------|---------|------|
+| Schema | TypeScript 类型 | 结构化、LLM 熟悉、紧凑 |
+| 简单数组 | TOON 格式 | 压缩率高（~50%） |
+| 复杂嵌套数据 | TOON 格式 | 保持可读性 |
+
+---
+
+#### 5. 💓 健康检查与心跳
 **状态**：待开发  
 **描述**：定期检测 MCP 服务器连接状态，主动发现断连。
 
@@ -100,7 +159,7 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 
 ### P2 - 中优先级
 
-#### 5. 📊 可观测性增强
+#### 6. 📊 可观测性增强
 **状态**：待开发  
 **描述**：添加日志、指标和追踪支持。
 
@@ -114,7 +173,7 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 
 ---
 
-#### 6. ⚡ 性能优化
+#### 7. ⚡ 性能优化
 **状态**：待开发  
 **描述**：提升高并发场景下的性能表现。
 
@@ -126,7 +185,7 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 
 ---
 
-#### 7. 🧪 测试覆盖率提升
+#### 8. 🧪 测试覆盖率提升
 **状态**：持续改进  
 **描述**：将测试覆盖率从 74% 提升到 85%+。
 
@@ -139,7 +198,7 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 
 ### P3 - 低优先级
 
-#### 8. 🔥 配置热加载
+#### 9. 🔥 配置热加载
 **状态**：待开发  
 **描述**：支持不重启服务更新配置。
 
@@ -150,7 +209,7 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 
 ---
 
-#### 9. 🖥️ Web 管理界面
+#### 10. 🖥️ Web 管理界面
 **状态**：待开发  
 **描述**：提供可视化管理界面。
 
@@ -162,7 +221,7 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 
 ---
 
-#### 10. 🔌 连接池动态扩缩容
+#### 11. 🔌 连接池动态扩缩容
 **状态**：待开发  
 **描述**：根据负载自动调整连接池大小。
 
@@ -187,7 +246,8 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 - [ ] 健康检查
 
 ### v0.3.0 - 优化版本
-- [ ] TOON 格式压缩
+- [ ] 多模态内容支持（图片/资源）
+- [ ] Schema 类型压缩（TypeScript 风格）
 - [ ] 可观测性增强
 - [ ] 性能优化
 
@@ -197,4 +257,4 @@ TOON（Token-Oriented Object Notation）是专为 LLM 设计的紧凑数据格�
 
 ---
 
-*最后更新：2026-01-24*
+*最后更新：2026-01-25（Schema 压缩改为 TypeScript 风格）*

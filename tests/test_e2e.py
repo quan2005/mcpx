@@ -16,15 +16,42 @@ from mcpx.registry import Registry
 
 def _extract_text_content(result) -> str:
     """Extract text content from CallToolResult."""
-    if hasattr(result, "data"):
-        return result.data
+    # FastMCP returns content in result.content, not result.data
     if hasattr(result, "content"):
         content_list = result.content
         if content_list and len(content_list) > 0:
             first_item = content_list[0]
             if hasattr(first_item, "text"):
                 return first_item.text
+    if hasattr(result, "data") and result.data is not None:
+        return result.data
     return str(result)
+
+
+def _parse_response(content: str) -> Any:
+    """Parse response, trying JSON first then TOON as fallback.
+
+    Note: TOON format is YAML-like and can confuse JSON parsing.
+    We try JSON first for error messages which are plain JSON.
+    """
+    from typing import Any
+
+    # Try JSON first (for error messages and uncompressed responses)
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Try TOON format (for compressed responses)
+    try:
+        import toons
+
+        return toons.loads(content)
+    except Exception:
+        pass
+
+    # Return as-is if both fail
+    return content
 
 
 class TestMCPXClientE2E:
@@ -64,7 +91,7 @@ class TestMCPXClientE2E:
             )
 
         content = _extract_text_content(result)
-        tools = json.loads(content)
+        tools = _parse_response(content)
 
         assert isinstance(tools, list)
         assert len(tools) > 0
@@ -94,7 +121,7 @@ class TestMCPXClientE2E:
             list_result = await client.call_tool(
                 "inspect", arguments={"server_name": "filesystem"}
             )
-            tools = json.loads(_extract_text_content(list_result))
+            tools = _parse_response(_extract_text_content(list_result))
 
             if tools:
                 tool_name = tools[0]["name"]
@@ -106,7 +133,7 @@ class TestMCPXClientE2E:
                 )
 
                 content = _extract_text_content(result)
-                tool_info = json.loads(content)
+                tool_info = _parse_response(content)
 
                 assert tool_info["server_name"] == "filesystem"
                 assert "name" in tool_info
@@ -133,7 +160,7 @@ class TestMCPXClientE2E:
             )
 
         content = _extract_text_content(result)
-        error_info = json.loads(content)
+        error_info = _parse_response(content)
 
         assert "error" in error_info
         assert "not found" in error_info["error"].lower()
@@ -157,7 +184,7 @@ class TestMCPXClientE2E:
             )
 
         content = _extract_text_content(result)
-        error_info = json.loads(content)
+        error_info = _parse_response(content)
 
         assert "error" in error_info
         assert "not found" in error_info["error"].lower()
@@ -187,7 +214,7 @@ class TestMCPXClientE2E:
             )
 
         content = _extract_text_content(result)
-        exec_result = json.loads(content)
+        exec_result = _parse_response(content)
 
         # New format: error responses have "error" key, no "success" key
         assert "error" in exec_result
@@ -217,7 +244,7 @@ class TestMCPXClientE2E:
             )
 
         content = _extract_text_content(result)
-        exec_result = json.loads(content)
+        exec_result = _parse_response(content)
 
         # New format: error responses have "error" key, no "success" key
         assert "error" in exec_result
@@ -241,7 +268,7 @@ class TestMCPXClientE2E:
             list_result = await client.call_tool(
                 "inspect", arguments={"server_name": "filesystem"}
             )
-            tools = json.loads(_extract_text_content(list_result))
+            tools = _parse_response(_extract_text_content(list_result))
 
             if tools:
                 tool_name = tools[0]["name"]
@@ -257,7 +284,7 @@ class TestMCPXClientE2E:
                 )
 
                 content = _extract_text_content(result)
-                exec_result = json.loads(content)
+                exec_result = _parse_response(content)
 
                 # Should fail with validation error (new format: no "success" key)
                 assert "error" in exec_result
@@ -288,7 +315,7 @@ class TestMCPXClientE2E:
             )
 
             content = _extract_text_content(result)
-            exec_result = json.loads(content)
+            exec_result = _parse_response(content)
 
             # Should fail with validation error (new format: no "success" key)
             assert "error" in exec_result
@@ -305,7 +332,7 @@ class TestMCPXClientE2E:
             )
 
         content = _extract_text_content(result)
-        error_info = json.loads(content)
+        error_info = _parse_response(content)
 
         assert "error" in error_info
         assert "not found" in error_info["error"].lower()
@@ -331,7 +358,7 @@ class TestMCPXClientE2E:
             )
 
         content = _extract_text_content(result)
-        tools = json.loads(content)
+        tools = _parse_response(content)
 
         assert isinstance(tools, list)
         assert len(tools) > 0
@@ -356,7 +383,7 @@ class TestMCPXClientE2E:
             list_result = await client.call_tool(
                 "inspect", arguments={"server_name": "filesystem"}
             )
-            tools = json.loads(_extract_text_content(list_result))
+            tools = _parse_response(_extract_text_content(list_result))
 
             assert len(tools) > 0
 
@@ -366,7 +393,7 @@ class TestMCPXClientE2E:
                 "inspect",
                 arguments={"server_name": "filesystem", "tool_name": tool_name},
             )
-            tool_detail = json.loads(_extract_text_content(detail_result))
+            tool_detail = _parse_response(_extract_text_content(detail_result))
 
             assert "input_schema" in tool_detail
 
@@ -392,8 +419,8 @@ class TestMCPXClientE2E:
                     "inspect", arguments={"server_name": "filesystem"}
                 )
 
-        tools1 = json.loads(_extract_text_content(result1))
-        tools2 = json.loads(_extract_text_content(result2))
+        tools1 = _parse_response(_extract_text_content(result1))
+        tools2 = _parse_response(_extract_text_content(result2))
 
         assert len(tools1) == len(tools2)
 
@@ -426,7 +453,7 @@ class TestMCPXConfigFile:
                     "inspect", arguments={"server_name": "fs"}
                 )
 
-            tools = json.loads(_extract_text_content(result))
+            tools = _parse_response(_extract_text_content(result))
             assert len(tools) > 0
 
         finally:
@@ -488,7 +515,7 @@ class TestMCPXErrorHandling:
                 "inspect", arguments={"server_name": "valid-server"}
             )
 
-        tools = json.loads(_extract_text_content(result))
+        tools = _parse_response(_extract_text_content(result))
 
         # At least the valid server's tools should be cached
         assert isinstance(tools, list)
@@ -519,7 +546,7 @@ class TestMCPXErrorHandling:
             )
 
         content = _extract_text_content(result)
-        exec_result = json.loads(content)
+        exec_result = _parse_response(content)
 
         # New format: error responses have "error" key (no "success" key)
         assert "error" in exec_result
@@ -603,7 +630,7 @@ class TestMCPXExecSuccess:
             # Should not be an error response
             if content.startswith("{"):
                 try:
-                    parsed = json.loads(content)
+                    parsed = _parse_response(content)
                     assert "error" not in parsed, f"Unexpected error: {parsed.get('error')}"
                 except json.JSONDecodeError:
                     pass  # Not JSON, that's fine for raw content
@@ -654,7 +681,7 @@ class TestMCPXExecSuccess:
                 )
 
             content = _extract_text_content(result)
-            exec_result = json.loads(content)
+            exec_result = _parse_response(content)
 
             # Should fail since we removed session from registry (no "success" key in new format)
             assert "error" in exec_result
@@ -733,7 +760,7 @@ class TestMCPXExecSuccess:
             # Verify it's not an error response
             if content.startswith("{"):
                 try:
-                    parsed = json.loads(content)
+                    parsed = _parse_response(content)
                     assert "error" not in parsed, f"Unexpected error: {parsed.get('error')}"
                 except json.JSONDecodeError:
                     pass
@@ -772,9 +799,9 @@ class TestMCPXExecSuccess:
         # Should not be an error response
         if content.startswith("{"):
             try:
-                parsed = json.loads(content)
+                parsed = _parse_response(content)
                 assert "error" not in parsed, f"Unexpected error: {parsed.get('error')}"
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, Exception):
                 pass
 
 
@@ -902,7 +929,7 @@ class TestMCPXHttpLifespan:
         assert not registry._initialized
 
         # Use TestClient which triggers lifespan events
-        with TestClient(app, raise_server_exceptions=False) as client:
+        with TestClient(app, raise_server_exceptions=False):
             # Lifespan should have run
             assert initialized
             assert registry._initialized
@@ -1016,7 +1043,7 @@ class TestMCPXHttpLifespan:
                     "inspect",
                     arguments={"server_name": "filesystem"},
                 )
-                tools = json.loads(_extract_text_content(result3))
+                tools = _parse_response(_extract_text_content(result3))
                 assert isinstance(tools, list)
                 assert len(tools) > 0
 

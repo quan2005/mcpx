@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastmcp import Client
@@ -12,6 +13,26 @@ from pydantic import ValidationError
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig, create_server, load_config
 from mcpx.registry import Registry, ToolInfo
+
+
+def _parse_response(content: str) -> Any:
+    """Parse response, trying JSON first then TOON as fallback."""
+    # Try JSON first (for error messages and uncompressed responses)
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Try TOON format (for compressed responses)
+    try:
+        import toons
+
+        return toons.loads(content)
+    except Exception:
+        pass
+
+    # Return as-is if both fail
+    return content
 
 
 def test_load_config_from_file():
@@ -144,14 +165,15 @@ def test_create_server_multiple_servers():
 
 def _extract_text_content(result) -> str:
     """Extract text content from CallToolResult."""
-    if hasattr(result, "data"):
-        return result.data
+    # FastMCP returns content in result.content, not result.data
     if hasattr(result, "content"):
         content_list = result.content
         if content_list and len(content_list) > 0:
             first_item = content_list[0]
             if hasattr(first_item, "text"):
                 return first_item.text
+    if hasattr(result, "data") and result.data is not None:
+        return result.data
     return str(result)
 
 
@@ -190,7 +212,7 @@ async def test_exec_validation_returns_tool_schema():
         )
 
     content = _extract_text_content(result)
-    exec_result = json.loads(content)
+    exec_result = _parse_response(content)
 
     # New simplified format: no "success" key
     assert "error" in exec_result
