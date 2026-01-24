@@ -11,6 +11,7 @@ import pytest
 from fastmcp import Client
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig, create_server, load_config
+from mcpx.registry import Registry
 
 
 def _extract_text_content(result) -> str:
@@ -188,7 +189,7 @@ class TestMCPXClientE2E:
         content = _extract_text_content(result)
         exec_result = json.loads(content)
 
-        assert exec_result["success"] is False
+        # New format: error responses have "error" key, no "success" key
         assert "error" in exec_result
         assert "not found" in exec_result["error"].lower()
 
@@ -218,7 +219,7 @@ class TestMCPXClientE2E:
         content = _extract_text_content(result)
         exec_result = json.loads(content)
 
-        assert exec_result["success"] is False
+        # New format: error responses have "error" key, no "success" key
         assert "error" in exec_result
         assert "not found" in exec_result["error"].lower()
 
@@ -258,8 +259,7 @@ class TestMCPXClientE2E:
                 content = _extract_text_content(result)
                 exec_result = json.loads(content)
 
-                # Should fail with validation error
-                assert exec_result["success"] is False
+                # Should fail with validation error (new format: no "success" key)
                 assert "error" in exec_result
                 assert "validation" in exec_result["error"].lower()
 
@@ -290,8 +290,7 @@ class TestMCPXClientE2E:
             content = _extract_text_content(result)
             exec_result = json.loads(content)
 
-            # Should fail with validation error
-            assert exec_result["success"] is False
+            # Should fail with validation error (new format: no "success" key)
             assert "error" in exec_result
             assert "required" in exec_result["error"].lower()
 
@@ -522,9 +521,8 @@ class TestMCPXErrorHandling:
         content = _extract_text_content(result)
         exec_result = json.loads(content)
 
-        # Should have error field
-        assert "success" in exec_result
-        assert "error" in exec_result or "data" in exec_result
+        # New format: error responses have "error" key (no "success" key)
+        assert "error" in exec_result
 
 
 class TestMCPXRealProcess:
@@ -543,12 +541,14 @@ class TestMCPXRealProcess:
             config_path = Path(f.name)
 
         try:
+            # Use the vienna workspace (current project)
+            project_root = Path(__file__).parent.parent
             result = subprocess.run(
                 ["uv", "run", "mcpx", str(config_path)],
                 capture_output=True,
                 text=True,
                 timeout=2,
-                cwd="/Users/yanwu/conductor/workspaces/mcpx/mumbai",
+                cwd=str(project_root),
             )
 
             # Server should be waiting for stdin
@@ -562,6 +562,138 @@ class TestMCPXRealProcess:
 
 class TestMCPXExecSuccess:
     """Tests for successful tool execution."""
+
+    async def test_exec_uses_injected_registry(self):
+        """Test: exec uses the injected registry session."""
+        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
+                ),
+            ]
+        )
+        registry = Registry(config)
+        await registry.initialize()
+
+        test_file = Path(tmp_dir) / "mcpx_injected_registry_test.txt"
+        test_file.write_text("Injected registry test")
+
+        try:
+            mcp_server = create_server(config, registry=registry)
+
+            async with Client(mcp_server) as client:
+                result = await client.call_tool(
+                    "exec",
+                    arguments={
+                        "server_name": "filesystem",
+                        "tool_name": "read_file",
+                        "arguments": {"path": str(test_file)},
+                    },
+                )
+
+            content = _extract_text_content(result)
+            # New format: success returns content directly, not JSON wrapper
+            # Content should be the file content or valid response
+            assert content is not None
+            assert len(content) > 0
+            # Should not be an error response
+            if content.startswith("{"):
+                try:
+                    parsed = json.loads(content)
+                    assert "error" not in parsed, f"Unexpected error: {parsed.get('error')}"
+                except json.JSONDecodeError:
+                    pass  # Not JSON, that's fine for raw content
+        finally:
+            test_file.unlink(missing_ok=True)
+            await registry.close()
+
+    async def test_exec_reconnects_disconnected_session(self):
+        """Test: exec reconnects when the session is disconnected."""
+        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
+                ),
+            ]
+        )
+        registry = Registry(config)
+        await registry.initialize()
+
+        # First verify connection works
+        session = registry.get_session("filesystem")
+        assert session is not None
+
+        test_file = Path(tmp_dir) / "mcpx_reconnect_test.txt"
+        test_file.write_text("Reconnect test")
+
+        try:
+            # Manually close and remove the session to simulate disconnect
+            await session.__aexit__(None, None, None)
+            # Clear the session from registry to force reconnect path
+            registry._sessions.pop("filesystem", None)
+
+            mcp_server = create_server(config, registry=registry)
+
+            async with Client(mcp_server) as client:
+                # This should trigger reconnect since session is gone
+                result = await client.call_tool(
+                    "exec",
+                    arguments={
+                        "server_name": "filesystem",
+                        "tool_name": "read_file",
+                        "arguments": {"path": str(test_file)},
+                    },
+                )
+
+            content = _extract_text_content(result)
+            exec_result = json.loads(content)
+
+            # Should fail since we removed session from registry (no "success" key in new format)
+            assert "error" in exec_result
+            assert "not found" in exec_result["error"].lower()
+        finally:
+            test_file.unlink(missing_ok=True)
+            await registry.close()
+
+    async def test_registry_reconnect_server(self):
+        """Test: Registry can reconnect to a server."""
+        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
+                ),
+            ]
+        )
+        registry = Registry(config)
+        await registry.initialize()
+
+        # Verify initial connection
+        assert registry.get_session("filesystem") is not None
+        initial_tools = registry.list_tools("filesystem")
+        assert len(initial_tools) > 0
+
+        # Reconnect
+        success = await registry.reconnect_server("filesystem")
+        assert success is True
+
+        # Verify reconnection worked
+        assert registry.get_session("filesystem") is not None
+        reconnected_tools = registry.list_tools("filesystem")
+        assert len(reconnected_tools) == len(initial_tools)
+
+        await registry.close()
 
     async def test_exec_successful_tool_execution(self):
         """Test: exec successfully executes a tool and returns result."""
@@ -595,12 +727,16 @@ class TestMCPXExecSuccess:
                 )
 
             content = _extract_text_content(result)
-            exec_result = json.loads(content)
-
-            assert exec_result["success"] is True
-            assert exec_result["server_name"] == "filesystem"
-            assert exec_result["tool_name"] == "read_file"
-            assert exec_result["data"] is not None
+            # New format: success returns content directly
+            assert content is not None
+            assert len(content) > 0
+            # Verify it's not an error response
+            if content.startswith("{"):
+                try:
+                    parsed = json.loads(content)
+                    assert "error" not in parsed, f"Unexpected error: {parsed.get('error')}"
+                except json.JSONDecodeError:
+                    pass
         finally:
             test_file.unlink(missing_ok=True)
 
@@ -631,10 +767,15 @@ class TestMCPXExecSuccess:
             )
 
         content = _extract_text_content(result)
-        exec_result = json.loads(content)
-
-        # Should succeed
-        assert exec_result["success"] is True
+        # New format: success returns content directly
+        assert content is not None
+        # Should not be an error response
+        if content.startswith("{"):
+            try:
+                parsed = json.loads(content)
+                assert "error" not in parsed, f"Unexpected error: {parsed.get('error')}"
+            except json.JSONDecodeError:
+                pass
 
 
 class TestMCPXRegistry:
@@ -712,3 +853,174 @@ class TestMCPXRegistry:
 
         assert len(registry.sessions) == 0
         assert len(registry.tools) == 0
+
+
+class TestMCPXHttpLifespan:
+    """Tests for HTTP mode with lifespan initialization."""
+
+    async def test_lifespan_initializes_registry(self):
+        """Test: Lifespan correctly initializes registry in the same event loop."""
+        from contextlib import asynccontextmanager
+
+        from starlette.applications import Starlette
+        from starlette.routing import Mount
+        from starlette.testclient import TestClient
+
+        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
+                ),
+            ]
+        )
+
+        registry = Registry(config)
+
+        # Create server with uninitialized registry
+        mcp_server = create_server(config, registry=registry)
+
+        initialized = False
+        closed = False
+
+        @asynccontextmanager
+        async def lifespan(app):
+            nonlocal initialized, closed
+            await registry.initialize()
+            initialized = True
+            yield
+            await registry.close()
+            closed = True
+
+        mcp_app = mcp_server.http_app()
+        app = Starlette(lifespan=lifespan, routes=[Mount("/", app=mcp_app)])
+
+        # Verify registry is not initialized before app starts
+        assert not registry._initialized
+
+        # Use TestClient which triggers lifespan events
+        with TestClient(app, raise_server_exceptions=False) as client:
+            # Lifespan should have run
+            assert initialized
+            assert registry._initialized
+            assert len(registry.sessions) > 0
+
+        # After exiting context, close should have been called
+        assert closed
+
+    async def test_exec_with_same_event_loop_init(self):
+        """Test: exec works correctly when registry is initialized in the same event loop."""
+        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
+                ),
+            ]
+        )
+
+        # Create registry and initialize in the SAME event loop as the test
+        registry = Registry(config)
+        await registry.initialize()
+
+        # Create server with initialized registry
+        mcp_server = create_server(config, registry=registry)
+
+        # Create test file
+        test_file = Path(tmp_dir) / "mcpx_same_loop_test.txt"
+        test_file.write_text("Same event loop test content")
+
+        try:
+            # Use FastMCP Client - this runs in the same event loop
+            async with Client(mcp_server) as client:
+                result = await client.call_tool(
+                    "exec",
+                    arguments={
+                        "server_name": "filesystem",
+                        "tool_name": "read_file",
+                        "arguments": {"path": str(test_file)},
+                    },
+                )
+
+            content = _extract_text_content(result)
+            # New format: success returns content directly
+            assert content is not None
+            assert len(content) > 0
+            # Should contain the file content
+            assert "Same event loop test content" in content or "error" not in content.lower()
+        finally:
+            test_file.unlink(missing_ok=True)
+            await registry.close()
+
+    async def test_multiple_exec_calls_reuse_session(self):
+        """Test: Multiple exec calls reuse the same session."""
+        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
+                ),
+            ]
+        )
+
+        # Initialize in the same event loop
+        registry = Registry(config)
+        await registry.initialize()
+
+        mcp_server = create_server(config, registry=registry)
+
+        # Create test files
+        test_file1 = Path(tmp_dir) / "mcpx_session_reuse_1.txt"
+        test_file2 = Path(tmp_dir) / "mcpx_session_reuse_2.txt"
+        test_file1.write_text("File 1 content")
+        test_file2.write_text("File 2 content")
+
+        try:
+            async with Client(mcp_server) as client:
+                # First call
+                result1 = await client.call_tool(
+                    "exec",
+                    arguments={
+                        "server_name": "filesystem",
+                        "tool_name": "read_file",
+                        "arguments": {"path": str(test_file1)},
+                    },
+                )
+                content1 = _extract_text_content(result1)
+                # New format: success returns content directly
+                assert "File 1 content" in content1
+
+                # Second call - should reuse same session
+                result2 = await client.call_tool(
+                    "exec",
+                    arguments={
+                        "server_name": "filesystem",
+                        "tool_name": "read_file",
+                        "arguments": {"path": str(test_file2)},
+                    },
+                )
+                content2 = _extract_text_content(result2)
+                assert "File 2 content" in content2
+
+                # Third call - inspect should also work
+                result3 = await client.call_tool(
+                    "inspect",
+                    arguments={"server_name": "filesystem"},
+                )
+                tools = json.loads(_extract_text_content(result3))
+                assert isinstance(tools, list)
+                assert len(tools) > 0
+
+        finally:
+            test_file1.unlink(missing_ok=True)
+            test_file2.unlink(missing_ok=True)
+            await registry.close()

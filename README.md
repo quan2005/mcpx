@@ -53,6 +53,68 @@ exec(
 )
 ```
 
+## Docker 使用
+
+### 构建镜像
+
+```bash
+docker build -t mcpx:latest .
+```
+
+### 运行容器
+
+```bash
+# 准备配置文件
+cp config.example.json config.json
+# 编辑 config.json 添加你的 MCP 服务器
+
+# 运行（HTTP/SSE 模式，默认端口 8000）
+docker run -p 8000:8000 -v $(pwd)/config.json:/app/config.json mcpx:latest
+```
+
+### Claude Desktop 集成（Docker）
+
+```json
+{
+  "mcpServers": {
+    "mcpx": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-p", "8000:8000",
+        "-v", "/path/to/config.json:/app/config.json",
+        "mcpx:latest"
+      ],
+      "env": {
+        "MCP_SSE_URL": "http://localhost:8000/mcp/"
+      }
+    }
+  }
+}
+```
+
+### 使用 Docker Compose（推荐）
+
+创建 `docker-compose.yml`：
+
+```yaml
+services:
+  mcpx:
+    image: mcpx:latest
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.json:/app/config.json
+    restart: unless-stopped
+```
+
+运行：
+
+```bash
+docker compose up -d
+```
+
 ## 传输方式
 
 ### stdio（默认）

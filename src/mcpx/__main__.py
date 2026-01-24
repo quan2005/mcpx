@@ -29,12 +29,35 @@ __all__ = [
 
 
 class McpServerConfig(BaseModel):
-    """MCP server configuration."""
+    """MCP server configuration.
+
+    Supports two transport types:
+    - stdio: Uses command + args to spawn a subprocess
+    - http: Uses url + optional headers for HTTP/SSE transport
+    """
 
     name: str
-    command: str
+    type: str = "stdio"  # "stdio" or "http"
+
+    # stdio transport fields
+    command: str | None = None
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] | None = None
+
+    # http transport fields
+    url: str | None = None
+    headers: dict[str, str] | None = None
+
+    def model_post_init(self, __context: object) -> None:
+        """Validate that required fields are present based on type."""
+        if self.type == "stdio":
+            if not self.command:
+                raise ValueError(f"Server '{self.name}': stdio type requires 'command' field")
+        elif self.type == "http":
+            if not self.url:
+                raise ValueError(f"Server '{self.name}': http type requires 'url' field")
+        else:
+            raise ValueError(f"Server '{self.name}': unknown type '{self.type}', must be 'stdio' or 'http'")
 
 
 class ProxyConfig(BaseModel):
@@ -76,7 +99,11 @@ def load_config(config_path: Path) -> ProxyConfig:
         sys.exit(1)
 
 
-def create_server(config: ProxyConfig, tools_description: str = "") -> FastMCP:
+def create_server(
+    config: ProxyConfig,
+    tools_description: str = "",
+    registry: "Registry | None" = None,
+) -> FastMCP:
     """Create MCP server from configuration.
 
     The server exposes only two tools:
@@ -95,10 +122,12 @@ def create_server(config: ProxyConfig, tools_description: str = "") -> FastMCP:
 
     mcp = FastMCP("MCPX")
 
+    active_registry = registry or Registry(config)
+
     # Store config and components (dynamic attributes for type checking)
     mcp._config = config  # type: ignore[attr-defined]
-    mcp._registry = Registry(config)  # type: ignore[attr-defined]
-    mcp._executor = Executor(mcp._registry)  # type: ignore[attr-defined]
+    mcp._registry = active_registry  # type: ignore[attr-defined]
+    mcp._executor = Executor(active_registry)  # type: ignore[attr-defined]
 
     # Build the inspect description
     base_desc = "Inspect available MCP tools and their schemas.\n\n"
@@ -252,14 +281,9 @@ def create_server(config: ProxyConfig, tools_description: str = "") -> FastMCP:
             servers = registry.list_servers()
             return json.dumps(
                 {
-                    "tool_name": tool_name,
-                    "server_name": server_name,
-                    "success": False,
-                    "data": None,
                     "error": f"Server '{server_name}' not found. Available: {servers}",
                 },
                 ensure_ascii=False,
-                indent=2,
             )
 
         # Check if tool exists
@@ -268,14 +292,9 @@ def create_server(config: ProxyConfig, tools_description: str = "") -> FastMCP:
             available = [t.name for t in registry.list_tools(server_name)]
             return json.dumps(
                 {
-                    "tool_name": tool_name,
-                    "server_name": server_name,
-                    "success": False,
-                    "data": None,
                     "error": f"Tool '{tool_name}' not found on server '{server_name}'. Available: {available}",
                 },
                 ensure_ascii=False,
-                indent=2,
             )
 
         # Validate arguments before execution
@@ -283,21 +302,27 @@ def create_server(config: ProxyConfig, tools_description: str = "") -> FastMCP:
         if validation_error:
             return json.dumps(
                 {
-                    "tool_name": tool_name,
-                    "server_name": server_name,
-                    "success": False,
-                    "data": None,
                     "error": f"Argument validation failed: {validation_error}",
+                    "tool_schema": tool_info.input_schema,
                 },
                 ensure_ascii=False,
-                indent=2,
             )
 
         args = arguments or {}
 
         result = await executor.execute(server_name, tool_name, args)
 
-        return json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
+        # Success: return data directly without wrapper
+        if result.success:
+            data = result.data
+            # If data is already a string, return it directly
+            if isinstance(data, str):
+                return data
+            # Otherwise serialize it
+            return json.dumps(data, ensure_ascii=False, indent=2)
+
+        # Failure: return error message
+        return json.dumps({"error": result.error}, ensure_ascii=False)
 
     return mcp
 
@@ -351,10 +376,8 @@ def main() -> None:
             tools_desc_lines.append(f"    - {tool.name}: {desc}")
     tools_description = "\n".join(tools_desc_lines)
 
-    # Create server with pre-generated tools description
-    mcp = create_server(config, tools_description)
-    # Transfer the initialized registry to the mcp instance
-    mcp._registry = temp_registry  # type: ignore[attr-defined]
+    # Create server with pre-generated tools description and initialized registry
+    mcp = create_server(config, tools_description, registry=temp_registry)
 
     # Run the server
     asyncio.run(mcp.run_async())
@@ -363,14 +386,21 @@ def main() -> None:
 def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
     """Main entry point for HTTP/SSE transport.
 
+    Uses lazy initialization to ensure registry connections are established
+    in uvicorn's event loop, not a separate asyncio.run() loop.
+
     Args:
         port: Port to listen on (default: 8000)
         host: Host to bind to (default: 0.0.0.0)
     """
+    from contextlib import asynccontextmanager
+    from typing import AsyncGenerator
 
     import uvicorn
+    from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.cors import CORSMiddleware
+    from starlette.routing import Mount
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -385,43 +415,37 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
     config = load_config(config_path)
     logger.info(f"Loaded {len(config.mcp_servers)} server(s) from {config_path}")
 
-    # Initialize registry first to generate tools description
+    # Create registry but DON'T initialize yet - will be done in lifespan
     from mcpx.registry import Registry
 
-    temp_registry = Registry(config)
-    asyncio.run(temp_registry.initialize())
+    registry = Registry(config)
 
-    # Generate tools description
-    tools = temp_registry.list_all_tools()
-    logger.info(f"Connected to {len(temp_registry.sessions)} server(s)")
-    logger.info(f"Cached {len(tools)} tool(s)")
+    # Create server with placeholder description (registry not yet initialized)
+    # The tools list will be generated dynamically after initialization
+    server_names = [s.name for s in config.mcp_servers]
+    placeholder_desc = f"Available servers: {', '.join(server_names)}\nUse inspect(server_name) to list tools."
+    mcp = create_server(config, placeholder_desc, registry=registry)
 
-    # Build compact tools description grouped by server
-    tools_desc_lines = ["Available tools:"]
-    for server_name in sorted(temp_registry.list_servers()):
-        # Get server info for description
-        server_info = temp_registry.get_server_info(server_name)
-        if server_info and server_info.instructions:
-            # Use instructions as server description
-            server_desc = server_info.instructions
-            if len(server_desc) > 100:
-                server_desc = server_desc[:97] + "..."
-            tools_desc_lines.append(f"  Server: {server_name} - {server_desc}")
-        else:
-            tools_desc_lines.append(f"  Server: {server_name}")
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
+        """Initialize registry in uvicorn's event loop."""
+        logger.info("Initializing MCP server connections...")
+        await registry.initialize()
 
-        for tool in temp_registry.list_tools(server_name):
-            # Truncate description if too long
-            desc = tool.description
-            if len(desc) > 80:
-                desc = desc[:77] + "..."
-            tools_desc_lines.append(f"    - {tool.name}: {desc}")
-    tools_description = "\n".join(tools_desc_lines)
+        tools = registry.list_all_tools()
+        logger.info(f"Connected to {len(registry.sessions)} server(s)")
+        logger.info(f"Cached {len(tools)} tool(s)")
 
-    # Create server with pre-generated tools description
-    mcp = create_server(config, tools_description)
-    # Transfer the initialized registry to the mcp instance
-    mcp._registry = temp_registry  # type: ignore[attr-defined]
+        # Log available tools
+        for server_name in sorted(registry.list_servers()):
+            server_tools = registry.list_tools(server_name)
+            logger.info(f"  Server '{server_name}': {len(server_tools)} tool(s)")
+
+        yield
+
+        # Cleanup on shutdown
+        logger.info("Shutting down MCP server connections...")
+        await registry.close()
 
     middleware = [
         Middleware(
@@ -438,11 +462,28 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
         )
     ]
 
-    http_app = mcp.http_app(middleware=middleware)
+    # Get the MCP HTTP app - it has its own lifespan for task group initialization
+    mcp_app = mcp.http_app(middleware=middleware)
+
+    # Create a combined lifespan that runs both our registry init and FastMCP's lifespan
+    @asynccontextmanager
+    async def combined_lifespan(app: Starlette) -> AsyncGenerator[None, None]:
+        """Combined lifespan: FastMCP task group + registry initialization."""
+        # First, run FastMCP's lifespan to initialize task group
+        async with mcp_app.lifespan(app):
+            # Then run our registry initialization
+            async with lifespan(app):
+                yield
+
+    # Wrap with combined lifespan
+    app = Starlette(
+        lifespan=combined_lifespan,
+        routes=[Mount("/", app=mcp_app)],
+    )
 
     logger.info(f"Starting HTTP server on {host}:{port}")
     logger.info(f"MCP endpoint: http://{host}:{port}/mcp/")
-    uvicorn.run(http_app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
