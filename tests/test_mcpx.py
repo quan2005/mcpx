@@ -217,5 +217,8 @@ async def test_exec_validation_returns_tool_schema():
     # New simplified format: no "success" key
     assert "error" in exec_result
     assert "Argument validation failed" in exec_result["error"]
-    # tool_schema now directly contains the input_schema
-    assert exec_result["tool_schema"] == tool_schema
+    # tool_schema is now compressed to TypeScript format (default enabled)
+    assert "tool_schema" in exec_result
+    # TypeScript format: {path: string; mode?: "fast" | "safe"}
+    assert "path: string" in exec_result["tool_schema"]
+    assert "mode?" in exec_result["tool_schema"]  # optional field

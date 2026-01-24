@@ -317,6 +317,8 @@ class Registry:
 
     async def close(self) -> None:
         """Close all sessions and stop health checker."""
+        import asyncio
+
         # Stop health checker
         await self._health_checker.stop()
 
@@ -325,6 +327,9 @@ class Registry:
             try:
                 await client.__aexit__(None, None, None)
                 logger.info(f"Closed connection to '{server_name}'")
+            except asyncio.CancelledError:
+                # Expected when closing in a separate asyncio.run() context
+                logger.debug(f"Connection to '{server_name}' cancelled during close")
             except Exception as e:
                 logger.error(f"Error closing connection to '{server_name}': {e}")
 

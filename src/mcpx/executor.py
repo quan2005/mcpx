@@ -17,12 +17,24 @@ __all__ = ["ExecutionResult", "Executor"]
 
 
 class ExecutionResult(BaseModel):
-    """Result of tool execution."""
+    """Result of tool execution.
+
+    Attributes:
+        server_name: Server name
+        tool_name: Tool name
+        success: Whether execution succeeded
+        data: Compressed data (TOON format if compression enabled)
+        raw_data: Original uncompressed data (for structuredContent)
+        error: Error message if failed
+        compressed: Whether data was compressed
+        format: Data format ("json" or "toon")
+    """
 
     server_name: str
     tool_name: str
     success: bool
-    data: Any
+    data: Any  # 压缩后的数据（用于 content）
+    raw_data: Any = None  # 原始未压缩数据（用于 structuredContent）
     error: str | None = None
     compressed: bool = False
     format: str = "json"  # "json" or "toon"
@@ -34,6 +46,7 @@ class ExecutionResult(BaseModel):
             "tool_name": self.tool_name,
             "success": self.success,
             "data": self.data,
+            "raw_data": self.raw_data,
             "error": self.error,
             "compressed": self.compressed,
             "format": self.format,
@@ -154,7 +167,8 @@ class Executor:
             server_name=server_name,
             tool_name=tool_name,
             success=True,
-            data=compressed_data,
+            data=compressed_data,  # 压缩后的数据（用于 content）
+            raw_data=data,  # 原始数据（用于 structuredContent）
             compressed=was_compressed,
             format="toon" if was_compressed else "json",
         )

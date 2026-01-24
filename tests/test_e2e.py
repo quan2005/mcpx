@@ -6,6 +6,7 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastmcp import Client
@@ -34,7 +35,6 @@ def _parse_response(content: str) -> Any:
     Note: TOON format is YAML-like and can confuse JSON parsing.
     We try JSON first for error messages which are plain JSON.
     """
-    from typing import Any
 
     # Try JSON first (for error messages and uncompressed responses)
     try:

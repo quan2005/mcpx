@@ -7,18 +7,41 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
+from fastmcp.tools.tool import ToolResult
 from mcp.types import EmbeddedResource, ImageContent, TextContent
 
 from mcpx.config import McpServerConfig, ProxyConfig
+from mcpx.schema_ts import json_schema_to_typescript
 
 if TYPE_CHECKING:
     from mcpx.executor import Executor
     from mcpx.registry import Registry
 
 logger = logging.getLogger(__name__)
+
+
+class ValidationErrorFilter(logging.Filter):
+    """Filter to suppress validation error logs from FastMCP.
+
+    These errors occur when clients pass invalid arguments (e.g., string instead of dict),
+    which is a normal situation that should be handled gracefully without logging errors.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Return False to suppress, True to keep the log record."""
+        # Suppress "Error validating tool" messages
+        if "Error validating tool" in record.getMessage():
+            return False
+        return True
+
+
+def _setup_fastmcp_logging() -> None:
+    """Configure FastMCP logger to suppress validation error logs."""
+    fastmcp_server_logger = logging.getLogger("fastmcp.server.server")
+    fastmcp_server_logger.addFilter(ValidationErrorFilter())
 
 __all__ = [
     "McpServerConfig",
@@ -28,6 +51,37 @@ __all__ = [
     "main",
     "main_http",
 ]
+
+
+def generate_tools_description(registry: "Registry") -> str:
+    """Generate a compact description of all available tools.
+
+    Args:
+        registry: Initialized registry with cached tools
+
+    Returns:
+        Formatted string with all tools grouped by server
+    """
+    tools_desc_lines = ["Available tools:"]
+    for server_name in sorted(registry.list_servers()):
+        # Get server info for description
+        server_info = registry.get_server_info(server_name)
+        if server_info and server_info.instructions:
+            # Use instructions as server description
+            server_desc = server_info.instructions
+            if len(server_desc) > 300:
+                server_desc = server_desc[:297] + "..."
+            tools_desc_lines.append(f"  Server: {server_name} - {server_desc}")
+        else:
+            tools_desc_lines.append(f"  Server: {server_name}")
+
+        for tool in registry.list_tools(server_name):
+            # Truncate description if too long
+            desc = tool.description
+            if len(desc) > 80:
+                desc = desc[:77] + "..."
+            tools_desc_lines.append(f"    - {tool.name}: {desc}")
+    return "\n".join(tools_desc_lines)
 
 
 def load_config(config_path: Path) -> ProxyConfig:
@@ -96,6 +150,20 @@ def create_server(
         toon_compression_min_size=config.toon_compression_min_size,
     )
 
+    def _maybe_compress_schema(input_schema: dict[str, object]) -> str | dict[str, object]:
+        """Compress input_schema to TypeScript format if enabled.
+
+        Args:
+            input_schema: JSON Schema dictionary
+
+        Returns:
+            TypeScript type string if compression enabled, otherwise original schema
+        """
+        if config.schema_compression_enabled:
+            # Keep descriptions with reasonable length limit
+            return json_schema_to_typescript(input_schema, max_description_len=300)
+        return input_schema
+
     # Build the inspect description
     base_desc = "Inspect available MCP tools and their schemas.\n\n"
     if tools_description:
@@ -107,7 +175,7 @@ def create_server(
     async def inspect(
         server_name: str,
         tool_name: str | None = None,
-    ) -> str:
+    ) -> ToolResult | str:
         """Query tool information from MCP servers.
 
         Args:
@@ -115,7 +183,9 @@ def create_server(
             tool_name: Specific tool name (optional). If provided, returns detailed schema for this tool.
 
         Returns:
-            JSON string with tool information (optionally TOON compressed)
+            ToolResult with:
+            - content: TOON 压缩后的数据（用于 AI 阅读）
+            - structured_content: 原始未压缩的 JSON 数据（用于程序解析）
 
         Examples:
             # List all tools from a server
@@ -130,6 +200,16 @@ def create_server(
         # Ensure registry is initialized
         await registry.ensure_initialized()
 
+        def _build_result(data: Any) -> ToolResult:
+            """Build ToolResult with compressed content and raw structured_content."""
+            compressed, was_compressed = executor._compressor.compress(data, min_size=1)
+            if was_compressed and isinstance(compressed, str):
+                # content: 压缩后的 TOON 字符串
+                # structured_content: 原始未压缩数据
+                return ToolResult(content=compressed, structured_content={"result": data})
+            # 未压缩：两者相同
+            return ToolResult(content=data, structured_content={"result": data})
+
         # Check if server exists
         if server_name not in registry.sessions:
             servers = registry.list_servers()
@@ -137,11 +217,7 @@ def create_server(
                 "error": f"Server '{server_name}' not found",
                 "available_servers": servers,
             }
-            # Apply compression with lower threshold for inspect responses
-            compressed, _ = executor._compressor.compress(error_data, min_size=1)
-            if isinstance(compressed, str):
-                return compressed
-            return json.dumps(error_data, ensure_ascii=False, indent=2)
+            return json.dumps(error_data, ensure_ascii=False)
 
         # Get specific tool
         if tool_name:
@@ -152,22 +228,14 @@ def create_server(
                     "error": f"Tool '{tool_name}' not found on server '{server_name}'",
                     "available_tools": available,
                 }
-                # Apply compression with lower threshold
-                compressed, _ = executor._compressor.compress(error_data, min_size=1)
-                if isinstance(compressed, str):
-                    return compressed
-                return json.dumps(error_data, ensure_ascii=False, indent=2)
+                return json.dumps(error_data, ensure_ascii=False)
             tool_data = {
                 "server_name": tool.server_name,
                 "name": tool.name,
                 "description": tool.description,
-                "input_schema": tool.input_schema,
+                "input_schema": _maybe_compress_schema(tool.input_schema),
             }
-            # Apply compression with lower threshold
-            compressed, _ = executor._compressor.compress(tool_data, min_size=1)
-            if isinstance(compressed, str):
-                return compressed
-            return json.dumps(tool_data, ensure_ascii=False, indent=2)
+            return _build_result(tool_data)
 
         # List all tools from the server
         tools = registry.list_tools(server_name)
@@ -176,15 +244,11 @@ def create_server(
                 "server_name": t.server_name,
                 "name": t.name,
                 "description": t.description,
-                "input_schema": t.input_schema,
+                "input_schema": _maybe_compress_schema(t.input_schema),
             }
             for t in tools
         ]
-        # Apply compression with lower threshold (tool schemas are large even for single items)
-        compressed, _ = executor._compressor.compress(tools_data, min_size=1)
-        if isinstance(compressed, str):
-            return compressed
-        return json.dumps(tools_data, ensure_ascii=False, indent=2)
+        return _build_result(tools_data)
 
     def _validate_arguments(
         arguments: dict[str, object] | None,
@@ -223,7 +287,7 @@ def create_server(
         server_name: str,
         tool_name: str,
         arguments: dict[str, object] | None = None,
-    ) -> str | TextContent | ImageContent | EmbeddedResource | list[TextContent | ImageContent | EmbeddedResource]:
+    ) -> ToolResult | str | TextContent | ImageContent | EmbeddedResource | list[TextContent | ImageContent | EmbeddedResource]:
         """Execute an MCP tool through the proxy.
 
         Args:
@@ -232,7 +296,11 @@ def create_server(
             arguments: Tool arguments (must match the tool's input schema)
 
         Returns:
-            - str: 纯文本或 JSON 字符串
+            ToolResult with:
+            - content: TOON 压缩后的数据（用于 AI 阅读）
+            - structured_content: 原始未压缩的 JSON 数据（用于程序解析）
+
+            特殊情况（多模态内容直接透传）:
             - TextContent: 文本内容
             - ImageContent: 图片内容（base64 编码）
             - EmbeddedResource: 资源引用
@@ -257,10 +325,6 @@ def create_server(
         if server_name not in registry.sessions:
             servers = registry.list_servers()
             error_data = {"error": f"Server '{server_name}' not found. Available: {servers}"}
-            # Error responses: use lower min_size for compression
-            compressed, _ = executor._compressor.compress(error_data, min_size=1)
-            if isinstance(compressed, str) and compressed != str(error_data):
-                return compressed
             return json.dumps(error_data, ensure_ascii=False)
 
         # Check if tool exists
@@ -270,9 +334,6 @@ def create_server(
             error_data = {
                 "error": f"Tool '{tool_name}' not found on server '{server_name}'. Available: {available}",
             }
-            compressed, _ = executor._compressor.compress(error_data, min_size=1)
-            if isinstance(compressed, str) and compressed != str(error_data):
-                return compressed
             return json.dumps(error_data, ensure_ascii=False)
 
         # Validate arguments before execution
@@ -280,38 +341,39 @@ def create_server(
         if validation_error:
             validation_error_data = {
                 "error": f"Argument validation failed: {validation_error}",
-                "tool_schema": tool_info.input_schema,
+                "tool_schema": _maybe_compress_schema(tool_info.input_schema),
             }
-            compressed, _ = executor._compressor.compress(validation_error_data, min_size=1)
-            if isinstance(compressed, str) and compressed != str(validation_error_data):
-                return compressed
             return json.dumps(validation_error_data, ensure_ascii=False)
 
         args = arguments or {}
 
         result = await executor.execute(server_name, tool_name, args)
 
-        # Success: return data directly
+        # Success: return ToolResult with both compressed and raw data
         if result.success:
-            data = result.data
-            # 多模态内容：直接返回原始对象
-            if isinstance(data, (TextContent, ImageContent, EmbeddedResource)):
-                return data
-            # 包含多模态内容的列表：直接返回
-            if isinstance(data, list):
-                if any(isinstance(item, (TextContent, ImageContent, EmbeddedResource)) for item in data):
-                    return data
-            # 字符串：直接返回
-            if isinstance(data, str):
-                return data
-            # 其他 JSON 数据：序列化
-            return json.dumps(data, ensure_ascii=False, indent=2)
+            raw_data = result.raw_data
+            compressed_data = result.data
 
-        # Failure: return error message with compression
+            # 多模态内容：直接返回原始对象（不适用 ToolResult）
+            if isinstance(raw_data, (TextContent, ImageContent, EmbeddedResource)):
+                return raw_data
+            # 包含多模态内容的列表：直接返回
+            if isinstance(raw_data, list):
+                if any(isinstance(item, (TextContent, ImageContent, EmbeddedResource)) for item in raw_data):
+                    return raw_data
+
+            # 普通数据：返回 ToolResult，同时包含压缩和原始数据
+            # content: 压缩后的数据（TOON 字符串或原始数据）
+            # structured_content: 原始未压缩的 JSON 数据
+            if result.compressed and isinstance(compressed_data, str):
+                # 压缩成功：content 是 TOON 字符串
+                return ToolResult(content=compressed_data, structured_content={"result": raw_data})
+            else:
+                # 未压缩：两者相同
+                return ToolResult(content=raw_data, structured_content={"result": raw_data})
+
+        # Failure: return error message
         exec_error_data = {"error": result.error}
-        compressed, _ = executor._compressor.compress(exec_error_data, min_size=1)
-        if isinstance(compressed, str) and compressed != str(exec_error_data):
-            return compressed
         return json.dumps(exec_error_data, ensure_ascii=False)
 
     return mcp
@@ -321,6 +383,7 @@ def main() -> None:
     """Main entry point for stdio transport."""
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    _setup_fastmcp_logging()
 
     # Default config path
     config_path = Path(__file__).parent.parent.parent / "config.json"
@@ -344,27 +407,8 @@ def main() -> None:
     logger.info(f"Connected to {len(temp_registry.sessions)} server(s)")
     logger.info(f"Cached {len(tools)} tool(s)")
 
-    # Build compact tools description grouped by server
-    tools_desc_lines = ["Available tools:"]
-    for server_name in sorted(temp_registry.list_servers()):
-        # Get server info for description
-        server_info = temp_registry.get_server_info(server_name)
-        if server_info and server_info.instructions:
-            # Use instructions as server description
-            server_desc = server_info.instructions
-            if len(server_desc) > 100:
-                server_desc = server_desc[:97] + "..."
-            tools_desc_lines.append(f"  Server: {server_name} - {server_desc}")
-        else:
-            tools_desc_lines.append(f"  Server: {server_name}")
-
-        for tool in temp_registry.list_tools(server_name):
-            # Truncate description if too long
-            desc = tool.description
-            if len(desc) > 80:
-                desc = desc[:77] + "..."
-            tools_desc_lines.append(f"    - {tool.name}: {desc}")
-    tools_description = "\n".join(tools_desc_lines)
+    # Generate tools description
+    tools_description = generate_tools_description(temp_registry)
 
     # Create server with pre-generated tools description and initialized registry
     mcp = create_server(config, tools_description, registry=temp_registry)
@@ -393,6 +437,7 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
     from starlette.routing import Mount
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    _setup_fastmcp_logging()
 
     # Default config path
     config_path = Path(__file__).parent.parent.parent / "config.json"
@@ -405,16 +450,27 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
     config = load_config(config_path)
     logger.info(f"Loaded {len(config.mcp_servers)} server(s) from {config_path}")
 
-    # Create registry but DON'T initialize yet - will be done in lifespan
     from mcpx.registry import Registry
 
+    # Initialize a temporary registry to get tools description
+    # This is needed because MCP tool descriptions must be set at creation time
+    temp_registry = Registry(config)
+    asyncio.run(temp_registry.initialize())
+
+    # Generate tools description from temporary registry
+    tools = temp_registry.list_all_tools()
+    logger.info(f"Pre-connected to {len(temp_registry.sessions)} server(s)")
+    logger.info(f"Discovered {len(tools)} tool(s)")
+    tools_description = generate_tools_description(temp_registry)
+
+    # Close temporary registry connections (will be re-established in lifespan)
+    asyncio.run(temp_registry.close())
+
+    # Create a fresh registry for the actual server (will be initialized in lifespan)
     registry = Registry(config)
 
-    # Create server with placeholder description (registry not yet initialized)
-    # The tools list will be generated dynamically after initialization
-    server_names = [s.name for s in config.mcp_servers]
-    placeholder_desc = f"Available servers: {', '.join(server_names)}\nUse inspect(server_name) to list tools."
-    mcp = create_server(config, placeholder_desc, registry=registry)
+    # Create server with full tools description
+    mcp = create_server(config, tools_description, registry=registry)
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:

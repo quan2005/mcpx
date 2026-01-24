@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from mcpx.registry import Registry
+    pass
 
 __all__ = ["McpServerConfig", "ProxyConfig"]
 
@@ -58,5 +58,8 @@ class ProxyConfig(BaseModel):
     # TOON compression configuration
     toon_compression_enabled: bool = True
     toon_compression_min_size: int = 3  # minimum items/keys to compress
+
+    # Schema compression configuration (TypeScript style)
+    schema_compression_enabled: bool = True
 
     model_config = {"extra": "ignore"}
