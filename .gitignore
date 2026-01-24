@@ -138,6 +138,9 @@ celerybeat.pid
 .env
 .envrc
 .venv
+
+# MCPX config
+config.json
 env/
 venv/
 ENV/
