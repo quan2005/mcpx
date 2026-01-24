@@ -7,9 +7,11 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from fastmcp import Client
 from pydantic import ValidationError
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig, create_server, load_config
+from mcpx.registry import Registry, ToolInfo
 
 
 def test_load_config_from_file():
@@ -138,3 +140,60 @@ def test_create_server_multiple_servers():
 
     assert mcp is not None
     assert len(mcp._config.mcp_servers) == 3
+
+
+def _extract_text_content(result) -> str:
+    """Extract text content from CallToolResult."""
+    if hasattr(result, "data"):
+        return result.data
+    if hasattr(result, "content"):
+        content_list = result.content
+        if content_list and len(content_list) > 0:
+            first_item = content_list[0]
+            if hasattr(first_item, "text"):
+                return first_item.text
+    return str(result)
+
+
+async def test_exec_validation_returns_tool_schema():
+    """Test: exec returns tool schema on argument validation error."""
+    config = ProxyConfig()
+    registry = Registry(config)
+    registry._initialized = True
+    registry._sessions["dummy"] = object()
+
+    tool_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "mode": {"type": "string", "enum": ["fast", "safe"]},
+        },
+        "required": ["path"],
+    }
+    registry._tools["dummy:read_file"] = ToolInfo(
+        server_name="dummy",
+        name="read_file",
+        description="Read file content",
+        input_schema=tool_schema,
+    )
+
+    mcp_server = create_server(config, registry=registry)
+
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "exec",
+            arguments={
+                "server_name": "dummy",
+                "tool_name": "read_file",
+                "arguments": {"mode": "fast"},
+            },
+        )
+
+    content = _extract_text_content(result)
+    exec_result = json.loads(content)
+
+    # New simplified format: no "success" key
+    assert "error" in exec_result
+    assert "Argument validation failed" in exec_result["error"]
+    # tool_schema now directly contains the input_schema
+    assert exec_result["tool_schema"] == tool_schema

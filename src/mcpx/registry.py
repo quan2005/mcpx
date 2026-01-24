@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from fastmcp import Client
-from fastmcp.client.transports import StdioTransport
+from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 from pydantic import BaseModel
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig
@@ -99,12 +99,19 @@ class Registry:
         """
         logger.info(f"Connecting to MCP server: {server_config.name}")
 
-        # Create stdio transport
-        transport = StdioTransport(
-            command=server_config.command,
-            args=server_config.args,
-            env=server_config.env or {},
-        )
+        # Create transport based on type
+        if server_config.type == "http":
+            transport = StreamableHttpTransport(
+                url=server_config.url,  # type: ignore[arg-type]
+                headers=server_config.headers or {},
+            )
+        else:
+            # Default to stdio
+            transport = StdioTransport(
+                command=server_config.command,  # type: ignore[arg-type]
+                args=server_config.args,
+                env=server_config.env or {},
+            )
 
         # Create client with transport
         client: McpClient = Client(transport)
@@ -247,6 +254,48 @@ class Registry:
     def tools(self) -> dict[str, ToolInfo]:
         """Get all cached tools."""
         return self._tools.copy()
+
+    async def reconnect_server(self, server_name: str) -> bool:
+        """Reconnect to a specific server.
+
+        Args:
+            server_name: Name of the server to reconnect
+
+        Returns:
+            True if reconnection succeeded, False otherwise
+        """
+        # Find the server config
+        server_config = None
+        for cfg in self._config.mcp_servers:
+            if cfg.name == server_name:
+                server_config = cfg
+                break
+
+        if server_config is None:
+            logger.error(f"Cannot reconnect: server '{server_name}' not in config")
+            return False
+
+        # Close existing session if any
+        old_client = self._sessions.pop(server_name, None)
+        if old_client is not None:
+            try:
+                await old_client.__aexit__(None, None, None)
+            except Exception:
+                pass
+
+        # Remove old tools for this server
+        keys_to_remove = [k for k in self._tools if k.startswith(f"{server_name}:")]
+        for key in keys_to_remove:
+            del self._tools[key]
+
+        # Reconnect
+        try:
+            await self._connect_server(server_config)
+            logger.info(f"Reconnected to server '{server_name}'")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to reconnect to server '{server_name}': {e}")
+            return False
 
     async def close(self) -> None:
         """Close all sessions."""

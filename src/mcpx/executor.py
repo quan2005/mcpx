@@ -76,26 +76,65 @@ class Executor:
         # Execute tool
         try:
             result = await session.call_tool(tool_name, arguments=arguments)
-
-            # Extract data from result
-            data = self._extract_result_data(result)
-
-            return ExecutionResult(
-                server_name=server_name,
-                tool_name=tool_name,
-                success=True,
-                data=data,
-            )
-
         except Exception as e:
-            logger.error(f"Error executing tool '{server_name}:{tool_name}': {e}")
-            return ExecutionResult(
-                server_name=server_name,
-                tool_name=tool_name,
-                success=False,
-                data=None,
-                error=str(e),
-            )
+            if self._is_connection_error(e):
+                # Try to reconnect through registry
+                logger.info(f"Connection error for '{server_name}', attempting reconnect...")
+                reconnected = await self._registry.reconnect_server(server_name)
+                if reconnected:
+                    # Get new session and retry
+                    new_session = self._registry.get_session(server_name)
+                    if new_session is not None:
+                        try:
+                            result = await new_session.call_tool(
+                                tool_name, arguments=arguments
+                            )
+                        except Exception as retry_error:
+                            logger.error(
+                                f"Error executing tool '{server_name}:{tool_name}' after reconnect: {retry_error}"
+                            )
+                            return ExecutionResult(
+                                server_name=server_name,
+                                tool_name=tool_name,
+                                success=False,
+                                data=None,
+                                error=str(retry_error),
+                            )
+                    else:
+                        return ExecutionResult(
+                            server_name=server_name,
+                            tool_name=tool_name,
+                            success=False,
+                            data=None,
+                            error=f"Reconnected but no session for '{server_name}'",
+                        )
+                else:
+                    return ExecutionResult(
+                        server_name=server_name,
+                        tool_name=tool_name,
+                        success=False,
+                        data=None,
+                        error=f"Failed to reconnect to '{server_name}': {e}",
+                    )
+            else:
+                logger.error(f"Error executing tool '{server_name}:{tool_name}': {e}")
+                return ExecutionResult(
+                    server_name=server_name,
+                    tool_name=tool_name,
+                    success=False,
+                    data=None,
+                    error=str(e),
+                )
+
+        # Extract data from result
+        data = self._extract_result_data(result)
+
+        return ExecutionResult(
+            server_name=server_name,
+            tool_name=tool_name,
+            success=True,
+            data=data,
+        )
 
     def _extract_result_data(self, result: Any) -> Any:
         """Extract data from CallToolResult.
@@ -106,26 +145,85 @@ class Executor:
         Returns:
             Extracted data (JSON serializable)
         """
-        # FastMCP 3.0+ provides direct data access
-        if hasattr(result, "data"):
-            data = result.data
-            # Ensure data is JSON serializable
-            return self._ensure_serializable(data)
+        logger.debug(f"Extracting data from result type: {type(result)}")
 
-        # Older versions use content attribute
+        # MCP protocol uses content attribute with list of content items
         if hasattr(result, "content"):
             content_list = result.content
+            logger.debug(f"Result has content with {len(content_list) if content_list else 0} items")
+
             if content_list and len(content_list) > 0:
-                # Extract text from first item
+                # If multiple items, collect all text content
+                if len(content_list) > 1:
+                    texts = []
+                    for item in content_list:
+                        if hasattr(item, "text"):
+                            texts.append(item.text)
+                        elif hasattr(item, "model_dump"):
+                            texts.append(item.model_dump())
+                        else:
+                            texts.append(str(item))
+                    return texts if len(texts) > 1 else texts[0] if texts else None
+
+                # Single item - extract its content
                 first_item = content_list[0]
+                logger.debug(f"First content item type: {type(first_item)}")
+
                 if hasattr(first_item, "text"):
-                    return first_item.text
-                # Return dict representation
+                    text = first_item.text
+                    # Try to unwrap if it's a JSON-serialized string
+                    return self._unwrap_json_string(text)
+                # Return dict representation for other types (e.g., ImageContent)
                 if hasattr(first_item, "model_dump"):
                     return first_item.model_dump()
                 return str(first_item)
 
+        # FastMCP 3.0+ may provide direct data access
+        if hasattr(result, "data") and result.data is not None:
+            data = result.data
+            return self._ensure_serializable(data)
+
+        # Fallback: try to serialize the entire result
+        if hasattr(result, "model_dump"):
+            return result.model_dump()
+
         return str(result)
+
+    def _unwrap_json_string(self, text: str) -> Any:
+        """Unwrap a JSON-serialized string if needed.
+
+        Some MCP servers return JSON data as a serialized string, e.g.:
+        - '"[{\\"key\\": \\"value\\"}]"' (JSON array serialized as string)
+        - '{"key": "value"}' (already valid JSON object)
+
+        This method tries to parse the text as JSON and unwrap it if it's
+        a string containing JSON.
+
+        Args:
+            text: The text content from MCP response
+
+        Returns:
+            Parsed JSON data or the original text
+        """
+        if not text:
+            return text
+
+        import json
+
+        # First, try to parse the text directly as JSON
+        try:
+            parsed = json.loads(text)
+            # If parsing succeeds and result is a string, it might be double-encoded
+            # Try to parse again
+            if isinstance(parsed, str):
+                try:
+                    return json.loads(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    return parsed
+            return parsed
+        except (json.JSONDecodeError, TypeError):
+            # Not valid JSON, return as-is
+            return text
 
     def _ensure_serializable(self, data: Any) -> Any:
         """Ensure data is JSON serializable.
@@ -149,6 +247,19 @@ class Executor:
             return data.model_dump()
         # Fallback to string representation
         return str(data)
+
+    def _is_connection_error(self, error: Exception) -> bool:
+        """Check if error indicates a connection problem that may be recoverable."""
+        error_str = str(error)
+        connection_indicators = [
+            "Client is not connected",
+            "nesting counter",
+            "Connection closed",
+            "Connection reset",
+            "Connection refused",
+            "Broken pipe",
+        ]
+        return any(indicator in error_str for indicator in connection_indicators)
 
     async def execute_many(
         self, calls: list[tuple[str, str, dict[str, Any]]]
