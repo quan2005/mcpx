@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from pydantic import BaseModel
 
+from mcpx.compression import ToonCompressor
 from mcpx.registry import Registry
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,8 @@ class ExecutionResult(BaseModel):
     success: bool
     data: Any
     error: str | None = None
+    compressed: bool = False
+    format: str = "json"  # "json" or "toon"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -31,6 +35,8 @@ class ExecutionResult(BaseModel):
             "success": self.success,
             "data": self.data,
             "error": self.error,
+            "compressed": self.compressed,
+            "format": self.format,
         }
 
 
@@ -39,15 +45,27 @@ class Executor:
 
     Maintains connections to all MCP servers and routes tool execution.
     Connections stay active after execution.
+    Optionally compresses results using TOON format.
     """
 
-    def __init__(self, registry: Registry) -> None:
+    def __init__(
+        self,
+        registry: Registry,
+        toon_compression_enabled: bool = False,
+        toon_compression_min_size: int = 3,
+    ) -> None:
         """Initialize executor with registry.
 
         Args:
             registry: Registry with active connections
+            toon_compression_enabled: Whether TOON compression is enabled
+            toon_compression_min_size: Minimum size for compression
         """
         self._registry = registry
+        self._compressor = ToonCompressor(
+            enabled=toon_compression_enabled,
+            min_size=toon_compression_min_size,
+        )
 
     async def execute(
         self, server_name: str, tool_name: str, arguments: dict[str, Any]
@@ -129,22 +147,35 @@ class Executor:
         # Extract data from result
         data = self._extract_result_data(result)
 
+        # Apply TOON compression if enabled and beneficial
+        compressed_data, was_compressed = self._compressor.compress(data)
+
         return ExecutionResult(
             server_name=server_name,
             tool_name=tool_name,
             success=True,
-            data=data,
+            data=compressed_data,
+            compressed=was_compressed,
+            format="toon" if was_compressed else "json",
         )
 
     def _extract_result_data(self, result: Any) -> Any:
         """Extract data from CallToolResult.
 
+        透传策略:
+        - 单项 TextContent: 尝试解析 JSON，否则返回 text
+        - 单项 ImageContent/EmbeddedResource: 直接返回原始对象
+        - 多项内容: 返回 list[Content]
+        - 纯 JSON: 返回 dict/list 用于压缩
+
         Args:
             result: Result from call_tool
 
         Returns:
-            Extracted data (JSON serializable)
+            原始 MCP 内容对象或 JSON 数据
         """
+        from mcpx.content import is_multimodal_content
+
         logger.debug(f"Extracting data from result type: {type(result)}")
 
         # MCP protocol uses content attribute with list of content items
@@ -152,31 +183,48 @@ class Executor:
             content_list = result.content
             logger.debug(f"Result has content with {len(content_list) if content_list else 0} items")
 
-            if content_list and len(content_list) > 0:
-                # If multiple items, collect all text content
-                if len(content_list) > 1:
-                    texts = []
-                    for item in content_list:
-                        if hasattr(item, "text"):
-                            texts.append(item.text)
-                        elif hasattr(item, "model_dump"):
-                            texts.append(item.model_dump())
-                        else:
-                            texts.append(str(item))
-                    return texts if len(texts) > 1 else texts[0] if texts else None
+            if not content_list:
+                return None
 
-                # Single item - extract its content
+            # 单项内容处理
+            if len(content_list) == 1:
                 first_item = content_list[0]
-                logger.debug(f"First content item type: {type(first_item)}")
+                logger.debug(f"First content item type: {type(first_item).__name__}")
 
+                # TextContent: 尝试解析 JSON
                 if hasattr(first_item, "text"):
                     text = first_item.text
-                    # Try to unwrap if it's a JSON-serialized string
                     return self._unwrap_json_string(text)
-                # Return dict representation for other types (e.g., ImageContent)
+
+                # 多模态内容（ImageContent/EmbeddedResource）: 直接返回原始对象
+                if is_multimodal_content(first_item):
+                    logger.debug(f"Returning multimodal content: {type(first_item).__name__}")
+                    return first_item
+
+                # 其他类型: 返回字典表示
                 if hasattr(first_item, "model_dump"):
                     return first_item.model_dump()
                 return str(first_item)
+
+            # 多项内容处理
+            # 检查是否包含多模态内容
+            has_multimodal = any(is_multimodal_content(item) for item in content_list)
+
+            if has_multimodal:
+                # 返回原始内容列表（保持多模态对象）
+                logger.debug(f"Returning {len(content_list)} content items with multimodal content")
+                return list(content_list)
+
+            # 纯文本内容: 收集所有 text
+            texts = []
+            for item in content_list:
+                if hasattr(item, "text"):
+                    texts.append(item.text)
+                elif hasattr(item, "model_dump"):
+                    texts.append(item.model_dump())
+                else:
+                    texts.append(str(item))
+            return texts if len(texts) > 1 else (texts[0] if texts else None)
 
         # FastMCP 3.0+ may provide direct data access
         if hasattr(result, "data") and result.data is not None:
@@ -208,7 +256,6 @@ class Executor:
         if not text:
             return text
 
-        import json
 
         # First, try to parse the text directly as JSON
         try:

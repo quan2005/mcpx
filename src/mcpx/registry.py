@@ -9,7 +9,8 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 from pydantic import BaseModel
 
-from mcpx.__main__ import McpServerConfig, ProxyConfig
+from mcpx.config import McpServerConfig, ProxyConfig
+from mcpx.health import HealthChecker, HealthStatus
 
 # Type alias for MCP Client
 McpClient = Any  # FastMCP Client doesn't have type stubs yet
@@ -55,6 +56,7 @@ class Registry:
     - Connects to all configured MCP servers
     - Maintains long-lived connections
     - Fetches and caches tool lists and schemas
+    - Starts health checking if enabled
     """
 
     def __init__(self, config: ProxyConfig) -> None:
@@ -69,6 +71,15 @@ class Registry:
         self._server_infos: dict[str, ServerInfo] = {}
         self._initialized = False
 
+        # Initialize health checker
+        self._health_checker = HealthChecker(
+            check_interval=config.health_check_interval,
+            check_timeout=config.health_check_timeout,
+            failure_threshold=config.health_check_failure_threshold,
+        )
+        # Set callback for health checker to get sessions
+        self._health_checker.set_session_callback(self._get_session_for_health_check)
+
     async def ensure_initialized(self) -> None:
         """Ensure registry is initialized (lazy initialization)."""
         if not self._initialized:
@@ -79,6 +90,7 @@ class Registry:
 
         Connects to each server and caches tool schemas.
         Failed connections don't prevent other servers from loading.
+        Starts health checking if enabled.
         """
         if self._initialized:
             return
@@ -91,6 +103,12 @@ class Registry:
 
         self._initialized = True
 
+        # Start health checker if enabled and we have connected servers
+        if self._config.health_check_enabled and self._sessions:
+            server_names = list(self._sessions.keys())
+            await self._health_checker.start(server_names)
+            logger.info(f"Health checker started for {len(server_names)} server(s)")
+
     async def _connect_server(self, server_config: McpServerConfig) -> None:
         """Connect to a single MCP server and cache its tools.
 
@@ -101,7 +119,7 @@ class Registry:
 
         # Create transport based on type
         if server_config.type == "http":
-            transport = StreamableHttpTransport(
+            transport: StdioTransport | StreamableHttpTransport = StreamableHttpTransport(
                 url=server_config.url,  # type: ignore[arg-type]
                 headers=server_config.headers or {},
             )
@@ -298,7 +316,11 @@ class Registry:
             return False
 
     async def close(self) -> None:
-        """Close all sessions."""
+        """Close all sessions and stop health checker."""
+        # Stop health checker
+        await self._health_checker.stop()
+
+        # Close all sessions
         for server_name, client in self._sessions.items():
             try:
                 await client.__aexit__(None, None, None)
@@ -308,3 +330,66 @@ class Registry:
 
         self._sessions.clear()
         self._tools.clear()
+        self._initialized = False
+
+    async def _get_session_for_health_check(self, server_name: str) -> McpClient | None:
+        """Get session for health checking.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            Session if available, None otherwise
+        """
+        return self._sessions.get(server_name)
+
+    def get_health_status(self) -> HealthStatus:
+        """Get current health status of all servers.
+
+        Returns:
+            HealthStatus with current health information
+        """
+        return self._health_checker.status
+
+    def get_server_health(self, server_name: str) -> dict[str, Any] | None:
+        """Get health status for a specific server.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            Server health dict or None if not found
+        """
+        health = self._health_checker.get_server_health(server_name)
+        if health:
+            return {
+                "server_name": health.server_name,
+                "status": health.status,
+                "last_check": health.last_check.isoformat() if health.last_check else None,
+                "last_success": health.last_success.isoformat() if health.last_success else None,
+                "consecutive_failures": health.consecutive_failures,
+                "last_error": health.last_error,
+            }
+        return None
+
+    def is_server_healthy(self, server_name: str) -> bool:
+        """Check if a specific server is healthy.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            True if server is healthy, False otherwise
+        """
+        return self._health_checker.is_server_healthy(server_name)
+
+    async def check_server_health(self, server_name: str) -> bool:
+        """Manually trigger health check for a server.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            True if server is healthy, False otherwise
+        """
+        return await self._health_checker.check_server(server_name)

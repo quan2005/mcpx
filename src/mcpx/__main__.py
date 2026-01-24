@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from mcp.types import EmbeddedResource, ImageContent, TextContent
+
+from mcpx.config import McpServerConfig, ProxyConfig
 
 if TYPE_CHECKING:
     from mcpx.executor import Executor
@@ -26,46 +28,6 @@ __all__ = [
     "main",
     "main_http",
 ]
-
-
-class McpServerConfig(BaseModel):
-    """MCP server configuration.
-
-    Supports two transport types:
-    - stdio: Uses command + args to spawn a subprocess
-    - http: Uses url + optional headers for HTTP/SSE transport
-    """
-
-    name: str
-    type: str = "stdio"  # "stdio" or "http"
-
-    # stdio transport fields
-    command: str | None = None
-    args: list[str] = Field(default_factory=list)
-    env: dict[str, str] | None = None
-
-    # http transport fields
-    url: str | None = None
-    headers: dict[str, str] | None = None
-
-    def model_post_init(self, __context: object) -> None:
-        """Validate that required fields are present based on type."""
-        if self.type == "stdio":
-            if not self.command:
-                raise ValueError(f"Server '{self.name}': stdio type requires 'command' field")
-        elif self.type == "http":
-            if not self.url:
-                raise ValueError(f"Server '{self.name}': http type requires 'url' field")
-        else:
-            raise ValueError(f"Server '{self.name}': unknown type '{self.type}', must be 'stdio' or 'http'")
-
-
-class ProxyConfig(BaseModel):
-    """Proxy configuration."""
-
-    mcp_servers: list[McpServerConfig] = Field(default_factory=list)
-
-    model_config = {"extra": "ignore"}
 
 
 def load_config(config_path: Path) -> ProxyConfig:
@@ -106,13 +68,14 @@ def create_server(
 ) -> FastMCP:
     """Create MCP server from configuration.
 
-    The server exposes only two tools:
-    - inspect: Get full schema of cached tools
-    - exec: Execute tools through long-lived connections
+    The server exposes two tools:
+    - inspect: Get full schema of cached tools (with TOON compression support)
+    - exec: Execute tools through long-lived connections (with TOON compression support)
 
     Args:
         config: Proxy configuration
         tools_description: Pre-generated description of available tools
+        registry: Optional pre-initialized registry
 
     Returns:
         FastMCP server instance
@@ -127,7 +90,11 @@ def create_server(
     # Store config and components (dynamic attributes for type checking)
     mcp._config = config  # type: ignore[attr-defined]
     mcp._registry = active_registry  # type: ignore[attr-defined]
-    mcp._executor = Executor(active_registry)  # type: ignore[attr-defined]
+    mcp._executor = Executor(  # type: ignore[attr-defined]
+        active_registry,
+        toon_compression_enabled=config.toon_compression_enabled,
+        toon_compression_min_size=config.toon_compression_min_size,
+    )
 
     # Build the inspect description
     base_desc = "Inspect available MCP tools and their schemas.\n\n"
@@ -148,7 +115,7 @@ def create_server(
             tool_name: Specific tool name (optional). If provided, returns detailed schema for this tool.
 
         Returns:
-            JSON string with tool information
+            JSON string with tool information (optionally TOON compressed)
 
         Examples:
             # List all tools from a server
@@ -158,6 +125,7 @@ def create_server(
             inspect(server_name="filesystem", tool_name="read_file")
         """
         registry: Registry = mcp._registry  # type: ignore[attr-defined]
+        executor: Executor = mcp._executor  # type: ignore[attr-defined]
 
         # Ensure registry is initialized
         await registry.ensure_initialized()
@@ -165,54 +133,58 @@ def create_server(
         # Check if server exists
         if server_name not in registry.sessions:
             servers = registry.list_servers()
-            return json.dumps(
-                {
-                    "error": f"Server '{server_name}' not found",
-                    "available_servers": servers,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+            error_data = {
+                "error": f"Server '{server_name}' not found",
+                "available_servers": servers,
+            }
+            # Apply compression with lower threshold for inspect responses
+            compressed, _ = executor._compressor.compress(error_data, min_size=1)
+            if isinstance(compressed, str):
+                return compressed
+            return json.dumps(error_data, ensure_ascii=False, indent=2)
 
         # Get specific tool
         if tool_name:
             tool = registry.get_tool(server_name, tool_name)
             if tool is None:
                 available = [t.name for t in registry.list_tools(server_name)]
-                return json.dumps(
-                    {
-                        "error": f"Tool '{tool_name}' not found on server '{server_name}'",
-                        "available_tools": available,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            return json.dumps(
-                {
-                    "server_name": tool.server_name,
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.input_schema,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+                error_data = {
+                    "error": f"Tool '{tool_name}' not found on server '{server_name}'",
+                    "available_tools": available,
+                }
+                # Apply compression with lower threshold
+                compressed, _ = executor._compressor.compress(error_data, min_size=1)
+                if isinstance(compressed, str):
+                    return compressed
+                return json.dumps(error_data, ensure_ascii=False, indent=2)
+            tool_data = {
+                "server_name": tool.server_name,
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+            }
+            # Apply compression with lower threshold
+            compressed, _ = executor._compressor.compress(tool_data, min_size=1)
+            if isinstance(compressed, str):
+                return compressed
+            return json.dumps(tool_data, ensure_ascii=False, indent=2)
 
         # List all tools from the server
         tools = registry.list_tools(server_name)
-        return json.dumps(
-            [
-                {
-                    "server_name": t.server_name,
-                    "name": t.name,
-                    "description": t.description,
-                    "input_schema": t.input_schema,
-                }
-                for t in tools
-            ],
-            ensure_ascii=False,
-            indent=2,
-        )
+        tools_data = [
+            {
+                "server_name": t.server_name,
+                "name": t.name,
+                "description": t.description,
+                "input_schema": t.input_schema,
+            }
+            for t in tools
+        ]
+        # Apply compression with lower threshold (tool schemas are large even for single items)
+        compressed, _ = executor._compressor.compress(tools_data, min_size=1)
+        if isinstance(compressed, str):
+            return compressed
+        return json.dumps(tools_data, ensure_ascii=False, indent=2)
 
     def _validate_arguments(
         arguments: dict[str, object] | None,
@@ -251,7 +223,7 @@ def create_server(
         server_name: str,
         tool_name: str,
         arguments: dict[str, object] | None = None,
-    ) -> str:
+    ) -> str | TextContent | ImageContent | EmbeddedResource | list[TextContent | ImageContent | EmbeddedResource]:
         """Execute an MCP tool through the proxy.
 
         Args:
@@ -260,7 +232,11 @@ def create_server(
             arguments: Tool arguments (must match the tool's input schema)
 
         Returns:
-            JSON string with execution result
+            - str: 纯文本或 JSON 字符串
+            - TextContent: 文本内容
+            - ImageContent: 图片内容（base64 编码）
+            - EmbeddedResource: 资源引用
+            - list: 多个内容项
 
         Examples:
             # Execute a tool
@@ -269,6 +245,7 @@ def create_server(
         Notes:
             - Use inspect to get the correct schema for arguments
             - Arguments must match the tool's input schema or execution will fail
+            - 支持透传多模态内容（图片、资源等）
         """
         executor: Executor = mcp._executor  # type: ignore[attr-defined]
 
@@ -279,50 +256,63 @@ def create_server(
         # Check if server exists
         if server_name not in registry.sessions:
             servers = registry.list_servers()
-            return json.dumps(
-                {
-                    "error": f"Server '{server_name}' not found. Available: {servers}",
-                },
-                ensure_ascii=False,
-            )
+            error_data = {"error": f"Server '{server_name}' not found. Available: {servers}"}
+            # Error responses: use lower min_size for compression
+            compressed, _ = executor._compressor.compress(error_data, min_size=1)
+            if isinstance(compressed, str) and compressed != str(error_data):
+                return compressed
+            return json.dumps(error_data, ensure_ascii=False)
 
         # Check if tool exists
         tool_info = registry.get_tool(server_name, tool_name)
         if tool_info is None:
             available = [t.name for t in registry.list_tools(server_name)]
-            return json.dumps(
-                {
-                    "error": f"Tool '{tool_name}' not found on server '{server_name}'. Available: {available}",
-                },
-                ensure_ascii=False,
-            )
+            error_data = {
+                "error": f"Tool '{tool_name}' not found on server '{server_name}'. Available: {available}",
+            }
+            compressed, _ = executor._compressor.compress(error_data, min_size=1)
+            if isinstance(compressed, str) and compressed != str(error_data):
+                return compressed
+            return json.dumps(error_data, ensure_ascii=False)
 
         # Validate arguments before execution
         validation_error = _validate_arguments(arguments, tool_info.input_schema)
         if validation_error:
-            return json.dumps(
-                {
-                    "error": f"Argument validation failed: {validation_error}",
-                    "tool_schema": tool_info.input_schema,
-                },
-                ensure_ascii=False,
-            )
+            validation_error_data = {
+                "error": f"Argument validation failed: {validation_error}",
+                "tool_schema": tool_info.input_schema,
+            }
+            compressed, _ = executor._compressor.compress(validation_error_data, min_size=1)
+            if isinstance(compressed, str) and compressed != str(validation_error_data):
+                return compressed
+            return json.dumps(validation_error_data, ensure_ascii=False)
 
         args = arguments or {}
 
         result = await executor.execute(server_name, tool_name, args)
 
-        # Success: return data directly without wrapper
+        # Success: return data directly
         if result.success:
             data = result.data
-            # If data is already a string, return it directly
+            # 多模态内容：直接返回原始对象
+            if isinstance(data, (TextContent, ImageContent, EmbeddedResource)):
+                return data
+            # 包含多模态内容的列表：直接返回
+            if isinstance(data, list):
+                if any(isinstance(item, (TextContent, ImageContent, EmbeddedResource)) for item in data):
+                    return data
+            # 字符串：直接返回
             if isinstance(data, str):
                 return data
-            # Otherwise serialize it
+            # 其他 JSON 数据：序列化
             return json.dumps(data, ensure_ascii=False, indent=2)
 
-        # Failure: return error message
-        return json.dumps({"error": result.error}, ensure_ascii=False)
+        # Failure: return error message with compression
+        exec_error_data = {"error": result.error}
+        compressed, _ = executor._compressor.compress(exec_error_data, min_size=1)
+        if isinstance(compressed, str) and compressed != str(exec_error_data):
+            return compressed
+        return json.dumps(exec_error_data, ensure_ascii=False)
 
     return mcp
 
