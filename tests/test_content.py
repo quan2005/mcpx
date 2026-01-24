@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from mcpx.content import ContentType, detect_content_type, is_multimodal_content
 
 

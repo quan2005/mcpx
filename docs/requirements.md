@@ -58,7 +58,11 @@ MCPX 是一个 MCP（Model Context Protocol）代理服务器，通过 `inspect`
 - `server_name`（必填）：服务器名称
 - `tool_name`（可选）：工具名称，返回该工具的完整 Schema
 
-**返回**：JSON 字符串
+**返回**：`ToolResult` 对象
+- `content`：TOON 压缩后的数据（用于 AI 阅读，节省 token）
+- `structuredContent`：原始未压缩的 JSON 数据（用于程序解析）
+
+**数据内容**：
 - 仅指定 `server_name`：返回该服务器的所有工具 Schema
 - 指定 `server_name` + `tool_name`：返回单个工具的完整 Schema
 
@@ -68,12 +72,32 @@ MCPX 是一个 MCP（Model Context Protocol）代理服务器，通过 `inspect`
 Inspect available MCP tools and their schemas.
 
 Available tools:
-  Server: filesystem
+  Server: filesystem - File operations for reading and writing files
     - read_file: Read the complete contents of a file...
     - write_file: Create a new file or overwrite...
-  Server: brave-search
+  Server: brave-search - Web search powered by Brave Search API
     - search: Search the web using Brave Search API...
 ```
+
+**说明**：
+- 每个 Server 行可包含该 MCP 服务器的 instructions（引导说明），帮助 AI 理解服务器的用途
+- 引导说明来自 MCP 服务器的 `server_info.instructions` 字段
+- 若引导说明超过 300 字符，截断并添加 `...`
+
+### 4.3 Schema 压缩
+为减少 token 消耗，`input_schema` 字段默认转换为 TypeScript 类型格式。
+
+**压缩规则**：
+- 启用配置：`schema_compression_enabled: true`（默认）
+- 压缩效果：约减少 60-70% token
+- 格式示例：
+  - JSON Schema: `{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`
+  - TypeScript: `{path: string}`
+
+**实现**：
+- `src/mcpx/schema_ts.py`：JSON Schema 到 TypeScript 转换器
+- 支持基本类型、数组、对象、联合类型、枚举、$ref 解析
+- 可配置保留描述（`max_description_len`）
 
 ### 4.2 exec
 执行 MCP 工具。
@@ -83,12 +107,17 @@ Available tools:
 - `tool_name`（必填）：工具名称
 - `arguments`（可选）：工具参数，执行前进行 Schema 校验
 
-**返回**：JSON 字符串
-- `server_name`：服务器名称
-- `tool_name`：工具名称
-- `success`：执行是否成功
-- `data`：执行结果（成功时）
-- `error`：错误信息（失败时）
+**返回**：`ToolResult` 对象
+- `content`：TOON 压缩后的数据（用于 AI 阅读，节省 token）
+- `structuredContent`：原始未压缩的 JSON 数据（用于程序解析）
+
+**特殊情况**（多模态内容直接透传）：
+- `TextContent`：文本内容
+- `ImageContent`：图片内容（base64 编码）
+- `EmbeddedResource`：资源引用
+
+**错误响应**：
+- `error`：错误信息
 
 ## 5. 错误处理
 
@@ -107,6 +136,40 @@ Available tools:
 - 配置文件不存在时退出并提示
 - JSON 格式错误时退出并提示
 - 配置结构错误时退出并提示
+
+## 8. 项目结构
+
+```
+src/mcpx/
+├── __init__.py       # 模块导出
+├── __main__.py       # 入口、inspect/exec 工具定义
+├── config.py         # 配置模型（McpServerConfig、ProxyConfig）
+├── registry.py       # Registry 类：连接管理、工具缓存
+├── executor.py       # Executor 类：工具执行
+├── compression.py    # TOON 压缩实现
+├── content.py        # 多模态内容检测
+├── health.py         # 连接健康检查
+└── schema_ts.py      # JSON Schema → TypeScript 转换器
+```
+
+### 核心类说明
+
+#### Registry (`registry.py`)
+- `_sessions`: 服务器长连接
+- `_tools`: 工具 Schema 缓存
+- `_server_infos`: 服务器信息缓存
+- `get_tool(server_name, tool_name)`: 获取工具
+- `list_tools(server_name)`: 列出服务器工具
+- `get_server_info(server_name)`: 获取服务器信息
+
+#### Executor (`executor.py`)
+- 复用 Registry 的连接
+- `execute(server_name, tool_name, arguments)`: 执行工具
+- 返回 `ExecutionResult`（包含压缩数据和原始数据）
+
+#### SchemaConverter (`schema_ts.py`)
+- `convert(schema)`: 将 JSON Schema 转换为 TypeScript 类型
+- 支持基本类型、数组、对象、联合类型、枚举、$ref 解析
 
 ## 6. 非功能需求
 
