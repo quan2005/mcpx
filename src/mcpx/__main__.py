@@ -219,7 +219,7 @@ def create_server(
         return input_schema
 
     # Build the describe description
-    base_desc = "Query tool information from MCP servers.\n\n"
+    base_desc = "Query tool information from MCP servers.\n\nExample: describe(method=\"filesystem.read_file\")\n\n"
     if tools_description:
         full_desc = base_desc + tools_description
     else:
@@ -448,7 +448,7 @@ def create_server(
         return json.dumps(exec_error_data, ensure_ascii=False)
 
     # Build the resources description
-    base_resources_desc = "Read MCP server resources.\n\n"
+    base_resources_desc = "Read MCP server resources.\n\nExample: resources(server_name=\"filesystem\", uri=\"file:///tmp/file.txt\")\n\n"
     if resources_description:
         full_resources_desc = base_resources_desc + resources_description
     else:
