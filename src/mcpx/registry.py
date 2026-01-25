@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from fastmcp import Client
@@ -121,7 +122,8 @@ class Registry:
             config: Proxy configuration with MCP server list
         """
         self._config = config
-        self._sessions: dict[str, McpClient] = {}
+        self._sessions: dict[str, McpClient] = {}  # TODO: Remove after refactor
+        self._client_factories: dict[str, Callable[[], McpClient]] = {}  # New: session isolation
         self._tools: dict[str, ToolInfo] = {}
         self._resources: dict[str, ResourceInfo] = {}
         self._server_infos: dict[str, ServerInfo] = {}
