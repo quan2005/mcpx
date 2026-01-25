@@ -15,19 +15,23 @@ import pytest
 from fastmcp import Client
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig, create_server
-from mcpx.registry import Registry
+
+# Module-level constant for temp directory path
+TMP_DIR = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
 
-def _extract_text_content(result) -> str:
+def _extract_text_content(result: Any) -> str:
     """Extract text content from CallToolResult."""
     if hasattr(result, "content"):
         content_list = result.content
         if content_list and len(content_list) > 0:
             first_item = content_list[0]
             if hasattr(first_item, "text"):
-                return first_item.text
+                text: Any = first_item.text
+                return str(text)
     if hasattr(result, "data") and result.data is not None:
-        return result.data
+        data: Any = result.data
+        return str(data)
     return str(result)
 
 
@@ -61,7 +65,7 @@ class TestMethodParsing:
             ("a.b", "a", "b"),
         ],
     )
-    def test_method_parsing_valid(self, method_str: str, expected_server: str, expected_tool: str | None):
+    def test_method_parsing_valid(self, method_str: str, expected_server: str, expected_tool: str | None) -> None:
         """Test valid method string parsing."""
         parts = method_str.split(".", 1)
         server_name = parts[0]
@@ -80,7 +84,7 @@ class TestMethodParsing:
             "server.tool.extra",
         ],
     )
-    def test_method_parsing_edge_cases(self, method_str: str):
+    def test_method_parsing_edge_cases(self, method_str: str) -> None:
         """Test edge case method string parsing."""
         parts = method_str.split(".", 1)
         server_name = parts[0] if parts else ""
@@ -95,9 +99,9 @@ class TestMethodParsing:
 class TestDescribeAPI:
     """Tests for the describe tool with method parameter."""
 
-    async def test_describe_with_server_only(self):
+    async def test_describe_with_server_only(self) -> None:
         """Test describe(method='server') returns all tools from server."""
-        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+        tmp_dir = TMP_DIR
 
         config = ProxyConfig(
             mcp_servers=[
@@ -127,9 +131,9 @@ class TestDescribeAPI:
             assert "input_schema" in tool
             assert tool["server_name"] == "filesystem"
 
-    async def test_describe_with_server_tool(self):
+    async def test_describe_with_server_tool(self) -> None:
         """Test describe(method='server.tool') returns specific tool schema."""
-        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+        tmp_dir = TMP_DIR
 
         config = ProxyConfig(
             mcp_servers=[
@@ -168,7 +172,7 @@ class TestDescribeAPI:
         assert "description" in tool_info
         assert "input_schema" in tool_info
 
-    async def test_describe_server_not_found(self):
+    async def test_describe_server_not_found(self) -> None:
         """Test describe returns error for non-existent server."""
         config = ProxyConfig(
             mcp_servers=[
@@ -193,7 +197,7 @@ class TestDescribeAPI:
         assert "not found" in error_info["error"].lower()
         assert "available_servers" in error_info
 
-    async def test_describe_tool_not_found(self):
+    async def test_describe_tool_not_found(self) -> None:
         """Test describe returns error for non-existent tool."""
         config = ProxyConfig(
             mcp_servers=[
@@ -223,9 +227,9 @@ class TestDescribeAPI:
 class TestCallAPI:
     """Tests for the call tool with method parameter."""
 
-    async def test_call_with_valid_method(self):
+    async def test_call_with_valid_method(self) -> None:
         """Test call(method='server.tool') with valid format."""
-        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+        tmp_dir = TMP_DIR
 
         config = ProxyConfig(
             mcp_servers=[
@@ -253,7 +257,7 @@ class TestCallAPI:
             parsed = _parse_response(content)
             assert "error" not in parsed, f"Unexpected error: {parsed.get('error')}"
 
-    async def test_call_invalid_format_no_dot(self):
+    async def test_call_invalid_format_no_dot(self) -> None:
         """Test call(method='server') rejects format without tool name."""
         config = ProxyConfig(
             mcp_servers=[
@@ -278,7 +282,7 @@ class TestCallAPI:
         assert "error" in error_info
         assert "invalid method format" in error_info["error"].lower()
 
-    async def test_call_server_not_found(self):
+    async def test_call_server_not_found(self) -> None:
         """Test call returns error for non-existent server."""
         config = ProxyConfig(
             mcp_servers=[
@@ -306,7 +310,7 @@ class TestCallAPI:
         assert "error" in error_info
         assert "not found" in error_info["error"].lower()
 
-    async def test_call_tool_not_found(self):
+    async def test_call_tool_not_found(self) -> None:
         """Test call returns error for non-existent tool."""
         config = ProxyConfig(
             mcp_servers=[
@@ -338,7 +342,7 @@ class TestCallAPI:
 class TestErrorHandling:
     """Tests for error handling with method parameter."""
 
-    async def test_empty_method_parameter_describe(self):
+    async def test_empty_method_parameter_describe(self) -> None:
         """Test describe handles empty method parameter."""
         config = ProxyConfig(
             mcp_servers=[
@@ -362,7 +366,7 @@ class TestErrorHandling:
         assert "error" in error_info
         assert "not found" in error_info["error"].lower()
 
-    async def test_empty_method_parameter_call(self):
+    async def test_empty_method_parameter_call(self) -> None:
         """Test call handles empty method parameter."""
         config = ProxyConfig(
             mcp_servers=[
@@ -386,7 +390,7 @@ class TestErrorHandling:
         assert "error" in error_info
         assert "invalid method format" in error_info["error"].lower()
 
-    async def test_method_with_trailing_dot(self):
+    async def test_method_with_trailing_dot(self) -> None:
         """Test method parameter with trailing dot."""
         config = ProxyConfig(
             mcp_servers=[
@@ -413,7 +417,7 @@ class TestErrorHandling:
             # If not an error, should be a list of tools
             assert isinstance(data, list)
 
-    async def test_multiple_dots_in_method(self):
+    async def test_multiple_dots_in_method(self) -> None:
         """Test method parameter with multiple dots."""
         config = ProxyConfig(
             mcp_servers=[
@@ -443,9 +447,9 @@ class TestErrorHandling:
 class TestSchemaCompressionInDescribe:
     """Tests for schema compression in describe API."""
 
-    async def test_describe_returns_compressed_schema(self):
+    async def test_describe_returns_compressed_schema(self) -> None:
         """Test describe returns TypeScript compressed schema when enabled."""
-        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+        tmp_dir = TMP_DIR
 
         config = ProxyConfig(
             mcp_servers=[
@@ -475,9 +479,9 @@ class TestSchemaCompressionInDescribe:
             # Compressed schema is a string (TypeScript type)
             assert isinstance(tool["input_schema"], str)
 
-    async def test_describe_returns_uncompressed_schema(self):
+    async def test_describe_returns_uncompressed_schema(self) -> None:
         """Test describe returns JSON schema when compression disabled."""
-        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+        tmp_dir = TMP_DIR
 
         config = ProxyConfig(
             mcp_servers=[
@@ -511,9 +515,9 @@ class TestSchemaCompressionInDescribe:
 class TestToonCompressionInDescribe:
     """Tests for TOON compression in describe API."""
 
-    async def test_describe_with_toon_compression(self):
+    async def test_describe_with_toon_compression(self) -> None:
         """Test describe returns TOON compressed content when enabled."""
-        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+        tmp_dir = TMP_DIR
 
         config = ProxyConfig(
             mcp_servers=[
@@ -539,9 +543,9 @@ class TestToonCompressionInDescribe:
         assert isinstance(parsed, list)
         assert len(parsed) > 0
 
-    async def test_describe_without_toon_compression(self):
+    async def test_describe_without_toon_compression(self) -> None:
         """Test describe returns plain JSON when TOON disabled."""
-        tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
+        tmp_dir = TMP_DIR
 
         config = ProxyConfig(
             mcp_servers=[
