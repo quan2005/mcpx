@@ -528,6 +528,17 @@ class Registry:
         """
         return self._sessions.get(server_name)
 
+    def get_client_factory(self, server_name: str) -> Callable[[], McpClient] | None:
+        """Get client factory for a server.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            Client factory if exists, None otherwise
+        """
+        return self._client_factories.get(server_name)
+
     @property
     def sessions(self) -> dict[str, McpClient]:
         """Get all active sessions."""
