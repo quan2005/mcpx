@@ -20,7 +20,6 @@ dev = [
 
 [project.scripts]
 mcpx = "mcpx.__main__:main"
-mcpx-sse = "mcpx.__main__:main_http"
 
 [build-system]
 requires = ["hatchling"]

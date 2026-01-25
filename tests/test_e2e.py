@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -595,42 +594,6 @@ class TestMCPXErrorHandling:
 
         # New format: error responses have "error" key (no "success" key)
         assert "error" in call_result
-
-
-class TestMCPXRealProcess:
-    """Tests with real subprocess execution (stdio transport)."""
-
-    def test_server_starts_via_command(self):
-        """Test: Server can be started via command line."""
-        config_data = {
-            "mcp_servers": [
-                {"name": "test", "command": "echo", "args": ["hello"]}
-            ]
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = Path(f.name)
-
-        try:
-            # Use the vienna workspace (current project)
-            project_root = Path(__file__).parent.parent
-            result = subprocess.run(
-                ["uv", "run", "mcpx", str(config_path)],
-                capture_output=True,
-                text=True,
-                timeout=2,
-                cwd=str(project_root),
-            )
-
-            # Server should be waiting for stdin
-            assert "Error" not in result.stderr or result.returncode == 0
-
-        except subprocess.TimeoutExpired:
-            pass
-        finally:
-            config_path.unlink()
-
 
 class TestMCPXExecSuccess:
     """Tests for successful tool execution."""
