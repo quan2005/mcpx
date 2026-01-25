@@ -73,8 +73,7 @@ inspect(server_name="filesystem", tool_name="read_file")
 # 执行工具
 exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/file.txt"})
 
-# 列出/读取资源
-resources(server_name="filesystem")
+# 读取资源
 resources(server_name="filesystem", uri="file:///tmp/file.txt")
 ```
 
@@ -125,22 +124,6 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 
 ### 📋 待办（P1 高优先级）
 - （暂无高优先级待办）
-
----
-
-## Claude Desktop 集成
-
-```json
-{
-  "mcpServers": {
-    "mcpx": {
-      "command": "uv",
-      "args": ["run", "mcpx", "/absolute/path/to/config.json"],
-      "cwd": "/absolute/path/to/mcpx"
-    }
-  }
-}
-```
 
 ---
 

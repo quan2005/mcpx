@@ -245,14 +245,21 @@ def create_server(
         await registry.ensure_initialized()
 
         def _build_result(data: Any) -> ToolResult:
-            """Build ToolResult with compressed content and raw structured_content."""
-            compressed, was_compressed = executor._compressor.compress(data, min_size=1)
+            """Build ToolResult with compressed content and optional structured_content."""
+            compressed, was_compressed = executor._compressor.compress(
+                data, min_size=config.toon_compression_min_size
+            )
             if was_compressed and isinstance(compressed, str):
                 # content: 压缩后的 TOON 字符串
-                # structured_content: 原始未压缩数据
-                return ToolResult(content=compressed, structured_content={"result": data})
-            # 未压缩：两者相同
-            return ToolResult(content=data, structured_content={"result": data})
+                if config.include_structured_content:
+                    # structured_content: 原始未压缩数据
+                    return ToolResult(content=compressed, structured_content={"result": data})
+                # 仅返回压缩内容
+                return ToolResult(content=compressed)
+            # 未压缩
+            if config.include_structured_content:
+                return ToolResult(content=data, structured_content={"result": data})
+            return ToolResult(content=data)
 
         # Check if server exists
         if not registry.has_server(server_name):
@@ -390,7 +397,7 @@ def create_server(
 
         result = await executor.execute(server_name, tool_name, args)
 
-        # Success: return ToolResult with both compressed and raw data
+        # Success: return ToolResult with compressed and optionally structured_content
         if result.success:
             raw_data = result.raw_data
             compressed_data = result.data
@@ -403,15 +410,19 @@ def create_server(
                 if any(isinstance(item, (TextContent, ImageContent, EmbeddedResource)) for item in raw_data):
                     return raw_data
 
-            # 普通数据：返回 ToolResult，同时包含压缩和原始数据
+            # 普通数据：返回 ToolResult
             # content: 压缩后的数据（TOON 字符串或原始数据）
-            # structured_content: 原始未压缩的 JSON 数据
+            # structured_content: 原始未压缩的 JSON 数据（如果配置启用）
             if result.compressed and isinstance(compressed_data, str):
                 # 压缩成功：content 是 TOON 字符串
-                return ToolResult(content=compressed_data, structured_content={"result": raw_data})
+                if config.include_structured_content:
+                    return ToolResult(content=compressed_data, structured_content={"result": raw_data})
+                return ToolResult(content=compressed_data)
             else:
-                # 未压缩：两者相同
-                return ToolResult(content=raw_data, structured_content={"result": raw_data})
+                # 未压缩
+                if config.include_structured_content:
+                    return ToolResult(content=raw_data, structured_content={"result": raw_data})
+                return ToolResult(content=raw_data)
 
         # Failure: return error message
         exec_error_data = {"error": result.error}
