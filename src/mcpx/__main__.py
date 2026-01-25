@@ -84,6 +84,33 @@ def generate_tools_description(registry: "Registry") -> str:
     return "\n".join(tools_desc_lines)
 
 
+def generate_resources_description(registry: "Registry") -> str:
+    """Generate a compact description of all available resources.
+
+    Args:
+        registry: Initialized registry with cached resources
+
+    Returns:
+        Formatted string with all resources grouped by server
+    """
+    resources_desc_lines = ["Available resources:"]
+    for server_name in sorted(registry.list_servers()):
+        resources = registry.list_resources(server_name)
+        if not resources:
+            continue
+
+        resources_desc_lines.append(f"  Server: {server_name}")
+        for resource in resources:
+            # Build resource info line
+            mime_info = f" [{resource.mime_type}]" if resource.mime_type else ""
+            size_info = f" ({resource.size} bytes)" if resource.size is not None else ""
+            desc = f": {resource.description}" if resource.description else ""
+            resources_desc_lines.append(
+                f"    - {resource.name} ({resource.uri}){mime_info}{size_info}{desc}"
+            )
+    return "\n".join(resources_desc_lines) if len(resources_desc_lines) > 1 else "No resources available."
+
+
 def load_config(config_path: Path) -> ProxyConfig:
     """Load configuration from file.
 
@@ -118,17 +145,20 @@ def load_config(config_path: Path) -> ProxyConfig:
 def create_server(
     config: ProxyConfig,
     tools_description: str = "",
+    resources_description: str = "",
     registry: "Registry | None" = None,
 ) -> FastMCP:
     """Create MCP server from configuration.
 
-    The server exposes two tools:
+    The server exposes three tools:
     - inspect: Get full schema of cached tools (with TOON compression support)
     - exec: Execute tools through long-lived connections (with TOON compression support)
+    - resources: List or read resources from MCP servers
 
     Args:
         config: Proxy configuration
         tools_description: Pre-generated description of available tools
+        resources_description: Pre-generated description of available resources
         registry: Optional pre-initialized registry
 
     Returns:
@@ -288,32 +318,15 @@ def create_server(
         tool_name: str,
         arguments: dict[str, object] | None = None,
     ) -> ToolResult | str | TextContent | ImageContent | EmbeddedResource | list[TextContent | ImageContent | EmbeddedResource]:
-        """Execute an MCP tool through the proxy.
+        """Execute an MCP tool.
 
         Args:
             server_name: Server name (required)
             tool_name: Tool name (required)
-            arguments: Tool arguments (must match the tool's input schema)
+            arguments: Tool arguments (use inspect to get schema)
 
-        Returns:
-            ToolResult with:
-            - content: TOON 压缩后的数据（用于 AI 阅读）
-            - structured_content: 原始未压缩的 JSON 数据（用于程序解析）
-
-            特殊情况（多模态内容直接透传）:
-            - TextContent: 文本内容
-            - ImageContent: 图片内容（base64 编码）
-            - EmbeddedResource: 资源引用
-            - list: 多个内容项
-
-        Examples:
-            # Execute a tool
+        Example:
             exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/file.txt"})
-
-        Notes:
-            - Use inspect to get the correct schema for arguments
-            - Arguments must match the tool's input schema or execution will fail
-            - 支持透传多模态内容（图片、资源等）
         """
         executor: Executor = mcp._executor  # type: ignore[attr-defined]
 
@@ -376,6 +389,82 @@ def create_server(
         exec_error_data = {"error": result.error}
         return json.dumps(exec_error_data, ensure_ascii=False)
 
+    # Build the resources description
+    base_resources_desc = "Read MCP server resources.\n\n"
+    if resources_description:
+        full_resources_desc = base_resources_desc + resources_description
+    else:
+        full_resources_desc = base_resources_desc + "Resources will be listed after initialization."
+
+    @mcp.tool(description=full_resources_desc)
+    async def resources(
+        server_name: str,
+        uri: str,
+    ) -> Any:
+        """Read a resource from MCP servers.
+
+        Args:
+            server_name: Server name (required)
+            uri: Resource URI (required)
+
+        Returns:
+            - Text resource: string content
+            - Binary resource: dict with uri, mime_type, and blob (base64)
+            - Multiple contents: list of content items
+
+        Examples:
+            # Read a specific resource
+            resources(server_name="filesystem", uri="file:///tmp/file.txt")
+        """
+        registry: Registry = mcp._registry  # type: ignore[attr-defined]
+
+        # Ensure registry is initialized
+        await registry.ensure_initialized()
+
+        # Check if server exists
+        if server_name not in registry.sessions:
+            servers = registry.list_servers()
+            error_data = {
+                "error": f"Server '{server_name}' not found",
+                "available_servers": servers,
+            }
+            return json.dumps(error_data, ensure_ascii=False)
+
+        # Read resource
+        contents = await registry.read_resource(server_name, uri)
+        if contents is None:
+            error_data = {
+                "error": f"Failed to read resource '{uri}' from server '{server_name}'",
+            }
+            return json.dumps(error_data, ensure_ascii=False)
+
+        # Return raw content (TextResourceContents or BlobResourceContents)
+        # Each content has a `uri` and either `text` or `blob`
+        if len(contents) == 1:
+            single_content = contents[0]
+            # TextResourceContents: return text directly
+            if hasattr(single_content, "text"):
+                return single_content.text
+            # BlobResourceContents: return as dict with base64 blob
+            if hasattr(single_content, "blob"):
+                return {
+                    "uri": str(single_content.uri),
+                    "mime_type": single_content.mimeType,
+                    "blob": single_content.blob,
+                }
+        # Multiple contents: return list of dicts
+        result_list = []
+        for content in contents:
+            if hasattr(content, "text"):
+                result_list.append({"uri": str(content.uri), "text": content.text})
+            elif hasattr(content, "blob"):
+                result_list.append({
+                    "uri": str(content.uri),
+                    "mime_type": content.mimeType,
+                    "blob": content.blob,
+                })
+        return result_list
+
     return mcp
 
 
@@ -410,8 +499,11 @@ def main() -> None:
     # Generate tools description
     tools_description = generate_tools_description(temp_registry)
 
-    # Create server with pre-generated tools description and initialized registry
-    mcp = create_server(config, tools_description, registry=temp_registry)
+    # Generate resources description
+    resources_description = generate_resources_description(temp_registry)
+
+    # Create server with pre-generated tools/resources description and initialized registry
+    mcp = create_server(config, tools_description, resources_description, registry=temp_registry)
 
     # Run the server
     asyncio.run(mcp.run_async())
@@ -463,14 +555,19 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
     logger.info(f"Discovered {len(tools)} tool(s)")
     tools_description = generate_tools_description(temp_registry)
 
+    # Generate resources description from temporary registry
+    all_resources = temp_registry.list_all_resources()
+    logger.info(f"Discovered {len(all_resources)} resource(s)")
+    resources_description = generate_resources_description(temp_registry)
+
     # Close temporary registry connections (will be re-established in lifespan)
     asyncio.run(temp_registry.close())
 
     # Create a fresh registry for the actual server (will be initialized in lifespan)
     registry = Registry(config)
 
-    # Create server with full tools description
-    mcp = create_server(config, tools_description, registry=registry)
+    # Create server with full tools and resources description
+    mcp = create_server(config, tools_description, resources_description, registry=registry)
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:

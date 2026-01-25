@@ -17,7 +17,40 @@ McpClient = Any  # FastMCP Client doesn't have type stubs yet
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ToolInfo", "ServerInfo", "Registry"]
+__all__ = ["ToolInfo", "ServerInfo", "ResourceInfo", "Registry"]
+
+
+def _is_text_mime_type(mime_type: str | None) -> bool:
+    """Check if a MIME type represents text content.
+
+    Args:
+        mime_type: MIME type string (e.g., "text/plain", "application/json")
+
+    Returns:
+        True if the MIME type represents text content, False otherwise
+    """
+    if mime_type is None:
+        return False
+
+    mime_type_lower = mime_type.lower()
+
+    # Common text MIME types
+    text_prefixes = (
+        "text/",
+        "application/json",
+        "application/xml",
+        "application/javascript",
+        "application/x-javascript",
+        "application/x-yaml",
+        "application/yaml",
+        "application/x-sh",
+        "application/x-python",
+        "application/x-toml",
+        "application/json+",
+        "application/xml+",
+    )
+
+    return any(mime_type_lower.startswith(prefix) for prefix in text_prefixes)
 
 
 class ServerInfo(BaseModel):
@@ -49,6 +82,28 @@ Input Schema:
 """
 
 
+class ResourceInfo(BaseModel):
+    """Cached resource information."""
+
+    server_name: str
+    uri: str
+    name: str
+    description: str | None = None
+    mime_type: str | None = None
+    size: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "server_name": self.server_name,
+            "uri": str(self.uri),
+            "name": self.name,
+            "description": self.description,
+            "mime_type": self.mime_type,
+            "size": self.size,
+        }
+
+
 class Registry:
     """Registry for MCP servers and their tools.
 
@@ -68,6 +123,7 @@ class Registry:
         self._config = config
         self._sessions: dict[str, McpClient] = {}
         self._tools: dict[str, ToolInfo] = {}
+        self._resources: dict[str, ResourceInfo] = {}
         self._server_infos: dict[str, ServerInfo] = {}
         self._initialized = False
 
@@ -168,6 +224,40 @@ class Registry:
                     input_schema=tool.inputSchema or {},
                 )
 
+            # Cache resource information
+            try:
+                resources = await client.list_resources()
+                logger.info(f"Server '{server_config.name}' has {len(resources)} resource(s)")
+                for resource in resources:
+                    resource_key = f"{server_config.name}:{resource.uri}"
+
+                    # Generate description for text resources without description
+                    description = resource.description
+                    if not description and _is_text_mime_type(resource.mimeType):
+                        try:
+                            contents = await client.read_resource(str(resource.uri))
+                            if contents and len(contents) > 0:
+                                first_content = contents[0]
+                                if hasattr(first_content, "text"):
+                                    text_content = first_content.text
+                                    # Use first 100 characters as description
+                                    description = text_content[:100]
+                                    if len(text_content) > 100:
+                                        description += "..."
+                        except Exception as e:
+                            logger.debug(f"Failed to read resource '{resource.uri}' for description: {e}")
+
+                    self._resources[resource_key] = ResourceInfo(
+                        server_name=server_config.name,
+                        uri=str(resource.uri),
+                        name=resource.name,
+                        description=description,
+                        mime_type=resource.mimeType,
+                        size=resource.size,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to list resources from '{server_config.name}': {e}")
+
             # Store session for later use
             self._sessions[server_config.name] = client
 
@@ -232,6 +322,65 @@ class Registry:
             List of all cached tool information
         """
         return list(self._tools.values())
+
+    def list_resources(self, server_name: str) -> list[ResourceInfo]:
+        """List all cached resources for a specific server.
+
+        Args:
+            server_name: Name of the server to list resources for
+
+        Returns:
+            List of resource information for the specified server
+        """
+        return [
+            resource for resource in self._resources.values()
+            if resource.server_name == server_name
+        ]
+
+    def list_all_resources(self) -> list[ResourceInfo]:
+        """List all cached resources from all servers.
+
+        Returns:
+            List of all cached resource information
+        """
+        return list(self._resources.values())
+
+    def get_resource(self, server_name: str, uri: str) -> ResourceInfo | None:
+        """Get cached resource information by server name and URI.
+
+        Args:
+            server_name: Name of the server
+            uri: Resource URI
+
+        Returns:
+            ResourceInfo if found, None otherwise
+        """
+        resource_key = f"{server_name}:{uri}"
+        return self._resources.get(resource_key)
+
+    async def read_resource(
+        self, server_name: str, uri: str
+    ) -> Any | None:
+        """Read resource content from MCP server.
+
+        Args:
+            server_name: Name of the server
+            uri: Resource URI to read
+
+        Returns:
+            List of content items (TextResourceContents or BlobResourceContents),
+            or None if server not found/read fails
+        """
+        client = self._sessions.get(server_name)
+        if client is None:
+            return None
+
+        try:
+            contents = await client.read_resource(uri)
+            return contents
+        except Exception as e:
+            logger.error(f"Error reading resource '{uri}' from '{server_name}': {e}")
+            return None
 
     def list_servers(self) -> list[str]:
         """List all connected server names.
@@ -306,6 +455,11 @@ class Registry:
         for key in keys_to_remove:
             del self._tools[key]
 
+        # Remove old resources for this server
+        resource_keys_to_remove = [k for k in self._resources if k.startswith(f"{server_name}:")]
+        for key in resource_keys_to_remove:
+            del self._resources[key]
+
         # Reconnect
         try:
             await self._connect_server(server_config)
@@ -335,6 +489,7 @@ class Registry:
 
         self._sessions.clear()
         self._tools.clear()
+        self._resources.clear()
         self._initialized = False
 
     async def _get_session_for_health_check(self, server_name: str) -> McpClient | None:

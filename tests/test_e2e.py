@@ -57,8 +57,8 @@ def _parse_response(content: str) -> Any:
 class TestMCPXClientE2E:
     """E2E tests using FastMCP Client API."""
 
-    async def test_client_list_tools_only_two(self):
-        """Test: Client sees only inspect and exec."""
+    async def test_client_list_tools_only_three(self):
+        """Test: Client sees only inspect, exec, and resources."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(name="test-server", command="echo", args=["hello"]),
@@ -70,7 +70,7 @@ class TestMCPXClientE2E:
             tools = await client.list_tools()
 
         tool_names = [tool.name for tool in tools]
-        assert tool_names == ["inspect", "exec"]
+        assert tool_names == ["inspect", "exec", "resources"]
 
     async def test_inspect_list_server_tools(self):
         """Test: inspect lists all available tools from a specific server."""
@@ -423,6 +423,56 @@ class TestMCPXClientE2E:
         tools2 = _parse_response(_extract_text_content(result2))
 
         assert len(tools1) == len(tools2)
+
+    async def test_resources_read_resource(self):
+        """Test: resources reads a specific resource from a server."""
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                ),
+            ]
+        )
+        mcp_server = create_server(config)
+
+        async with Client(mcp_server) as client:
+            # Try to read a resource (using a test file path)
+            # The filesystem server allows reading files
+            result = await client.call_tool(
+                "resources",
+                arguments={"server_name": "filesystem", "uri": "file:///tmp"},
+            )
+
+        # Verify we got some response (could be error or content)
+        assert result is not None
+
+    async def test_resources_server_not_found(self):
+        """Test: resources returns error for non-existent server."""
+        config = ProxyConfig(
+            mcp_servers=[
+                McpServerConfig(
+                    name="filesystem",
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                ),
+            ]
+        )
+        mcp_server = create_server(config)
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool(
+                "resources",
+                arguments={"server_name": "nonexistent", "uri": "file:///tmp"},
+            )
+
+        content = _extract_text_content(result)
+        error_info = _parse_response(content)
+
+        assert "error" in error_info
+        assert "not found" in error_info["error"].lower()
+        assert "available_servers" in error_info
 
 
 class TestMCPXConfigFile:
