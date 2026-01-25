@@ -1,9 +1,9 @@
 {
-  "mcp_servers": [
-    {
-      "name": "filesystem",
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/your/directory"]
     }
-  ]
+  }
 }

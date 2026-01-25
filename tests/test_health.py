@@ -278,9 +278,9 @@ class TestHealthIntegration:
         from mcpx.registry import Registry
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(name="test", command="echo", args=["hello"]),
-            ],
+            mcpServers={
+                "test": McpServerConfig(type="stdio", command="echo", args=["hello"]),
+            },
             health_check_enabled=False,
         )
 
@@ -298,13 +298,13 @@ class TestHealthIntegration:
         from mcpx.registry import Registry
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ],
+            },
             health_check_enabled=True,
             health_check_interval=60,  # Long interval for test
         )
@@ -326,13 +326,13 @@ class TestHealthIntegration:
         from mcpx.registry import Registry
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ],
+            },
             health_check_enabled=False,  # Disable for simpler test
         )
 
@@ -354,13 +354,13 @@ class TestHealthIntegration:
         from mcpx.registry import Registry
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ],
+            },
             health_check_enabled=False,
         )
 

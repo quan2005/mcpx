@@ -94,8 +94,9 @@ AI → resources → Registry._resources (缓存) / read_resource() → 资源�
 
 ```python
 # Registry 初始化时创建 factory
-factory = self._create_client_factory(server_config)
-self._client_factories[server_config.name] = factory
+for server_name, server_config in self._config.mcpServers.items():
+    factory = self._create_client_factory(server_config)
+    self._client_factories[server_name] = factory
 
 # Executor 每次请求创建新会话
 factory = self._registry.get_client_factory(server_name)
@@ -161,22 +162,22 @@ call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
 
 ## 配置
 
+MCPX 使用 Claude Code 兼容的配置格式：
+
 ```json
 {
-  "mcp_servers": [
-    {
-      "name": "filesystem",
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-      "type": "stdio"
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
     },
-    {
-      "name": "http-server",
-      "url": "http://localhost:3000/mcp",
+    "http-server": {
       "type": "http",
+      "url": "http://localhost:3000/mcp",
       "headers": {"Authorization": "Bearer xxx"}
     }
-  ],
+  },
   "schema_compression_enabled": true,
   "toon_compression_enabled": true,
   "toon_compression_min_size": 3,
@@ -184,6 +185,16 @@ call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
   "health_check_interval": 30
 }
 ```
+
+### 配置说明
+
+- `mcpServers`: 服务器配置字典（key 为服务器名称）
+  - `type`: 传输类型，`"stdio"` 或 `"http"`（默认 `"stdio"`）
+  - `command`: stdio 类型的命令
+  - `args`: 命令参数数组
+  - `env`: 环境变量字典（可选）
+  - `url`: http 类型的 URL
+  - `headers`: HTTP 请求头（可选）
 
 ## 测试要求
 

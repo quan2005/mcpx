@@ -51,16 +51,16 @@ uv run mcpx config.json
 uv run mcpx --port 3000 --host 127.0.0.1 config.json
 ```
 
-**config.json**
+**config.json**（Claude Code 兼容格式）
 ```json
 {
-  "mcp_servers": [
-    {
-      "name": "filesystem",
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
     }
-  ]
+  }
 }
 ```
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -59,9 +60,13 @@ class TestMCPXClientE2E:
     async def test_client_list_tools_only_three(self):
         """Test: Client sees only describe, call, and resources."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(name="test-server", command="echo", args=["hello"]),
-            ]
+            mcpServers={
+                "test-server": McpServerConfig(
+                    type="stdio",
+                    command="echo",
+                    args=["hello"],
+                ),
+            }
         )
         mcp_server = create_server(config)
 
@@ -74,13 +79,13 @@ class TestMCPXClientE2E:
     async def test_describe_list_server_tools(self):
         """Test: describe lists all available tools from a specific server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -104,13 +109,13 @@ class TestMCPXClientE2E:
     async def test_describe_get_specific_tool(self):
         """Test: describe returns full schema for a specific tool."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -140,13 +145,13 @@ class TestMCPXClientE2E:
     async def test_describe_tool_not_found(self):
         """Test: describe returns error for non-existent tool."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -165,13 +170,13 @@ class TestMCPXClientE2E:
     async def test_describe_server_not_found(self):
         """Test: describe returns error for invalid server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -190,13 +195,13 @@ class TestMCPXClientE2E:
     async def test_call_server_not_found(self):
         """Test: call returns error for non-existent server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -219,13 +224,13 @@ class TestMCPXClientE2E:
     async def test_call_tool_not_found(self):
         """Test: call returns error for non-existent tool."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -248,13 +253,13 @@ class TestMCPXClientE2E:
     async def test_call_argument_validation_error(self):
         """Test: call returns accurate error when arguments don't match schema."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -287,13 +292,13 @@ class TestMCPXClientE2E:
     async def test_call_missing_required_argument(self):
         """Test: call returns error when required argument is missing."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -316,7 +321,7 @@ class TestMCPXClientE2E:
 
     async def test_empty_config_server_not_found(self):
         """Test: Empty config results in server not found error."""
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
@@ -336,13 +341,13 @@ class TestMCPXClientE2E:
     async def test_multiple_servers_cached_tools(self):
         """Test: Multiple servers result in all tools being cached per server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -363,13 +368,13 @@ class TestMCPXClientE2E:
     async def test_describe_and_call_integration(self):
         """Test: Complete workflow of describe then call."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -395,13 +400,13 @@ class TestMCPXClientE2E:
     async def test_concurrent_clients(self):
         """Test: Multiple concurrent clients work correctly."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -422,13 +427,13 @@ class TestMCPXClientE2E:
     async def test_resources_read_resource(self):
         """Test: resources reads a specific resource from a server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -446,13 +451,13 @@ class TestMCPXClientE2E:
     async def test_resources_server_not_found(self):
         """Test: resources returns error for non-existent server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -476,13 +481,13 @@ class TestMCPXConfigFile:
     async def test_load_config_and_connect(self):
         """Test: Load config from file and connect client."""
         config_data = {
-            "mcp_servers": [
-                {
-                    "name": "fs",
+            "mcpServers": {
+                "fs": {
+                    "type": "stdio",
                     "command": "npx",
                     "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 }
-            ]
+            }
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -519,11 +524,11 @@ class TestMCPXConfigFile:
             config_path.unlink()
 
     async def test_config_with_invalid_structure(self):
-        """Test: Invalid structure (mcp_servers not a list) returns clear error."""
+        """Test: Invalid structure (mcpServers not a dict) returns clear error."""
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False
         ) as f:
-            json.dump({"mcp_servers": "not-a-list"}, f)
+            json.dump({"mcpServers": "not-a-dict"}, f)
             config_path = Path(f.name)
 
         try:
@@ -539,18 +544,18 @@ class TestMCPXErrorHandling:
     async def test_failed_server_connection_doesnt_crash(self):
         """Test: Failed server connection doesn't prevent other servers."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="valid-server",
+            mcpServers={
+                "valid-server": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-                McpServerConfig(
-                    name="invalid-server",
+                "invalid-server": McpServerConfig(
+                    type="stdio",
                     command="nonexistent-command-xyz",
                     args=[],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -569,13 +574,13 @@ class TestMCPXErrorHandling:
     async def test_call_returns_original_error_on_failure(self):
         """Test: Tool execution returns original error message."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -595,6 +600,46 @@ class TestMCPXErrorHandling:
         # New format: error responses have "error" key (no "success" key)
         assert "error" in call_result
 
+
+class TestMCPXRealProcess:
+    """Tests with real subprocess execution (stdio transport)."""
+
+    def test_server_starts_via_command(self):
+        """Test: Server can be started via command line."""
+        config_data = {
+            "mcpServers": {
+                "test": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["hello"],
+                }
+            }
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            # Use the current project
+            project_root = Path(__file__).parent.parent
+            result = subprocess.run(
+                ["uv", "run", "mcpx", str(config_path)],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                cwd=str(project_root),
+            )
+
+            # Server should be waiting for stdin
+            assert "Error" not in result.stderr or result.returncode == 0
+
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            config_path.unlink()
+
+
 class TestMCPXExecSuccess:
     """Tests for successful tool execution."""
 
@@ -603,13 +648,13 @@ class TestMCPXExecSuccess:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         registry = Registry(config)
         await registry.initialize()
@@ -650,13 +695,13 @@ class TestMCPXExecSuccess:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         registry = Registry(config)
         await registry.initialize()
@@ -699,13 +744,13 @@ class TestMCPXExecSuccess:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         registry = Registry(config)
         await registry.initialize()
@@ -733,13 +778,13 @@ class TestMCPXExecSuccess:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -777,13 +822,13 @@ class TestMCPXExecSuccess:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -814,13 +859,13 @@ class TestMCPXRegistry:
     async def test_registry_get_tool_list_text(self):
         """Test: Registry generates correct tool list text."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
 
         from mcpx.registry import Registry
@@ -838,13 +883,13 @@ class TestMCPXRegistry:
     async def test_registry_list_all_tools(self):
         """Test: Registry.list_all_tools returns all tools from all servers."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
 
         from mcpx.registry import Registry
@@ -863,13 +908,13 @@ class TestMCPXRegistry:
     async def test_registry_close(self):
         """Test: Registry.close properly closes all sessions."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
 
         from mcpx.registry import Registry
@@ -899,13 +944,13 @@ class TestMCPXHttpLifespan:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -946,13 +991,13 @@ class TestMCPXHttpLifespan:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         # Create registry and initialize in the SAME event loop as the test
@@ -992,13 +1037,13 @@ class TestMCPXHttpLifespan:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         # Initialize in the same event loop
@@ -1069,13 +1114,13 @@ class TestProxyProviderRefactorVerification:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -1098,13 +1143,13 @@ class TestProxyProviderRefactorVerification:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -1128,13 +1173,13 @@ class TestProxyProviderRefactorVerification:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -1178,13 +1223,13 @@ class TestProxyProviderRefactorVerification:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -1218,13 +1263,13 @@ class TestProxyProviderRefactorVerification:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -1259,13 +1304,13 @@ class TestProxyProviderRefactorVerification:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)

@@ -104,13 +104,13 @@ class TestDescribeAPI:
         tmp_dir = TMP_DIR
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -135,13 +135,13 @@ class TestDescribeAPI:
         tmp_dir = TMP_DIR
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -172,13 +172,13 @@ class TestDescribeAPI:
     async def test_describe_server_not_found(self) -> None:
         """Test describe returns error for non-existent server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -197,13 +197,13 @@ class TestDescribeAPI:
     async def test_describe_tool_not_found(self) -> None:
         """Test describe returns error for non-existent tool."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -229,13 +229,13 @@ class TestCallAPI:
         tmp_dir = TMP_DIR
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -257,13 +257,13 @@ class TestCallAPI:
     async def test_call_invalid_format_no_dot(self) -> None:
         """Test call(method='server') rejects format without tool name."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -282,13 +282,13 @@ class TestCallAPI:
     async def test_call_server_not_found(self) -> None:
         """Test call returns error for non-existent server."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -310,13 +310,13 @@ class TestCallAPI:
     async def test_call_tool_not_found(self) -> None:
         """Test call returns error for non-existent tool."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -342,13 +342,13 @@ class TestErrorHandling:
     async def test_empty_method_parameter_describe(self) -> None:
         """Test describe handles empty method parameter."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -366,13 +366,13 @@ class TestErrorHandling:
     async def test_empty_method_parameter_call(self) -> None:
         """Test call handles empty method parameter."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -390,13 +390,13 @@ class TestErrorHandling:
     async def test_method_with_trailing_dot(self) -> None:
         """Test method parameter with trailing dot."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -417,13 +417,13 @@ class TestErrorHandling:
     async def test_multiple_dots_in_method(self) -> None:
         """Test method parameter with multiple dots."""
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -449,13 +449,13 @@ class TestSchemaCompressionInDescribe:
         tmp_dir = TMP_DIR
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ],
+            },
             schema_compression_enabled=True,
         )
         mcp_server = create_server(config)
@@ -481,13 +481,13 @@ class TestSchemaCompressionInDescribe:
         tmp_dir = TMP_DIR
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ],
+            },
             schema_compression_enabled=False,
         )
         mcp_server = create_server(config)
@@ -517,13 +517,13 @@ class TestToonCompressionInDescribe:
         tmp_dir = TMP_DIR
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ],
+            },
             toon_compression_enabled=True,
             toon_compression_min_size=2,
         )
@@ -545,13 +545,13 @@ class TestToonCompressionInDescribe:
         tmp_dir = TMP_DIR
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ],
+            },
             toon_compression_enabled=False,
         )
         mcp_server = create_server(config)

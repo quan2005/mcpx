@@ -19,7 +19,7 @@ class TestExecutorCoverage:
         """Test: Executor handles no client factory gracefully."""
         from mcpx.registry import Registry
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         registry = Registry(config)
         registry._initialized = True  # Skip initialization
 
@@ -37,13 +37,13 @@ class TestExecutorCoverage:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -71,13 +71,13 @@ class TestExecutorCoverage:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -165,7 +165,7 @@ class TestRegistryCoverage:
         """Test: Getting factory for non-existent server returns None."""
         from mcpx.registry import Registry
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         registry = Registry(config)
 
         factory = registry.get_client_factory("nonexistent")
@@ -176,7 +176,7 @@ class TestRegistryCoverage:
         """Test: Getting info for non-existent server returns None."""
         from mcpx.registry import Registry
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         registry = Registry(config)
 
         info = registry.get_server_info("nonexistent")
@@ -190,13 +190,13 @@ class TestRegistryCoverage:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -219,13 +219,13 @@ class TestRegistryCoverage:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -246,7 +246,7 @@ class TestRegistryCoverage:
         """Test: get_tool_list_text returns message when no tools."""
         from mcpx.registry import Registry
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         registry = Registry(config)
 
         text = registry.get_tool_list_text()
@@ -258,29 +258,32 @@ class TestConfigCoverage:
 
     def test_server_config_validation_http_missing_url(self):
         """Test: HTTP config without url raises error."""
+        config = McpServerConfig(type="http", command="echo")
         with pytest.raises(ValueError) as exc_info:
-            McpServerConfig(name="test", type="http", command="echo")
+            config.validate_for_server("test")
         assert "requires 'url' field" in str(exc_info.value)
 
     def test_server_config_validation_stdio_missing_command(self):
         """Test: stdio config without command raises error."""
+        config = McpServerConfig(type="stdio")
         with pytest.raises(ValueError) as exc_info:
-            McpServerConfig(name="test", type="stdio")
+            config.validate_for_server("test")
         assert "requires 'command' field" in str(exc_info.value)
 
     def test_server_config_validation_unknown_type(self):
         """Test: Unknown type raises error."""
+        config = McpServerConfig(type="unknown")
         with pytest.raises(ValueError) as exc_info:
-            McpServerConfig(name="test", type="unknown")
+            config.validate_for_server("test")
         assert "must be 'stdio' or 'http'" in str(exc_info.value)
 
     def test_proxy_config_extra_fields_ignored(self):
         """Test: Extra fields in ProxyConfig are ignored."""
         config = ProxyConfig(
-            mcp_servers=[],
+            mcpServers={},
             unknown_field="should_be_ignored",
         )
-        assert config.mcp_servers == []
+        assert config.mcpServers == {}
 
 
 class TestHealthCoverage:

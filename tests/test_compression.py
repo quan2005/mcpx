@@ -204,13 +204,13 @@ class TestCompressionIntegration:
         from mcpx.registry import Registry
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ],
+            },
             toon_compression_enabled=False,
         )
 
@@ -236,13 +236,13 @@ class TestCompressionIntegration:
         from mcpx.registry import Registry
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ],
+            },
             toon_compression_enabled=True,
         )
 
@@ -268,13 +268,13 @@ class TestCompressionIntegration:
         from mcpx.registry import Registry
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ],
+            },
         )
 
         registry = Registry(config)
