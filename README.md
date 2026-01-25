@@ -19,12 +19,13 @@
 
 ### 解决方案
 
-MCPX 只暴露两个工具：
+MCPX 只暴露三个工具：
 
 | 工具 | 用途 |
 |------|------|
 | `inspect` | 查询可用工具及其 Schema |
 | `exec` | 执行任意 MCP 工具 |
+| `resources` | 列出或读取 MCP 服务器资源 |
 
 AI 收到的是一份简洁的"工具目录"，按需查询详情。
 
@@ -71,6 +72,10 @@ inspect(server_name="filesystem", tool_name="read_file")
 
 # 执行工具
 exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/file.txt"})
+
+# 列出/读取资源
+resources(server_name="filesystem")
+resources(server_name="filesystem", uri="file:///tmp/file.txt")
 ```
 
 ---
@@ -79,7 +84,7 @@ exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/f
 
 | 特性 | 说明 |
 |------|------|
-| **按需加载** | 仅暴露 `inspect` 和 `exec` 两个工具，AI 按需查询详情 |
+| **按需加载** | 仅暴露 `inspect`、`exec`、`resources` 三个工具，AI 按需查询详情 |
 | **双传输** | stdio（Claude Desktop）+ HTTP/SSE |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
@@ -114,11 +119,12 @@ exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/f
 - stdio + HTTP/SSE 双传输
 - Schema/TOON 压缩、健康检查
 - 多模态内容透传、Docker 支持
+- MCP Resource 动态加载
+- client_factory 模式重构（会话隔离）
 - E2E 测试 74% 覆盖率
 
 ### 📋 待办（P1 高优先级）
-- 🔄 连接稳定性（ProxyProvider 重构）
-- 📚 MCP Resource 动态加载
+- （暂无高优先级待办）
 
 ---
 

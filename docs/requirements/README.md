@@ -84,7 +84,7 @@ AI → inspect (查询工具) / exec (执行工具) / resources (读取资源)
 |------|------|----------|
 | FastMCP 框架架构 | ✅ | 检查依赖、代码结构 |
 | 工具注册表与缓存 | ✅ | 检查 Registry 实现 |
-| 长连接执行器 | ✅ | 检查 Executor 实现 |
+| client_factory 执行器 | ✅ | 检查 Executor 实现 |
 | MCP 代理服务器 | ✅ | 检查工具数量、接口实现 |
 | 双传输方式支持 | ✅ | stdio + HTTP/SSE 功能测试 |
 | 配置驱动 | ✅ | 配置文件、错误处理 |
