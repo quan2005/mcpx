@@ -354,10 +354,10 @@ class TestRegistryEdgeCases:
         registry = Registry(config)
 
         await registry.initialize()
-        session_count_1 = len(registry.sessions)
+        session_count_1 = len(registry.list_servers())
 
         await registry.initialize()
-        session_count_2 = len(registry.sessions)
+        session_count_2 = len(registry.list_servers())
 
         assert session_count_1 == session_count_2 == 1
 

@@ -55,22 +55,23 @@ src/mcpx/
 
 MCPX 将多个 MCP 服务器的工具和资源收敛为三个入口点：
 - **inspect**: 查询工具列表和 Schema（按需获取详情）
-- **exec**: 执行工具（复用长连接）
+- **exec**: 执行工具（使用 client_factory 每次创建新会话）
 - **resources**: 列出或读取 MCP 服务器的资源（支持文本和二进制内容）
 
 ### 三大核心类
 
 **Registry（注册表）**
-- 启动时连接所有 MCP 服务器（stdio 或 HTTP/SSE）
-- 维护长连接 `_sessions: dict[str, McpClient]`
+- 启动时连接所有 MCP 服务器（stdio 或 HTTP/SSE）获取工具/资源 Schema
+- 使用 FastMCP 的 **client_factory 模式**（Session Isolation）
+- 维护 client factory `_client_factories: dict[str, Callable[[], McpClient]]`
 - 缓存工具 Schema `_tools: dict[str, ToolInfo]`
 - 缓存资源信息 `_resources: dict[str, ResourceInfo]`
 - 缓存服务器信息 `_server_infos: dict[str, ServerInfo]`
-- 集成健康检查 `HealthChecker`
+- 集成健康检查 `HealthChecker`（使用临时会话）
 
 **Executor（执行器）**
-- 复用 Registry 的连接，不创建新连接
-- 支持自动重连（连接错误时）
+- 每次请求通过 `client_factory()` 创建新会话
+- 使用 `async with client:` 自动管理会话生命周期
 - TOON 压缩响应数据
 - 多模态内容透传（图片/资源）
 
@@ -83,8 +84,25 @@ MCPX 将多个 MCP 服务器的工具和资源收敛为三个入口点：
 
 ```
 AI → inspect → Registry._tools (缓存) → 压缩的 Schema
-AI → exec → Executor → Registry._sessions → MCP Server → TOON 压缩结果
+AI → exec → Executor → client_factory() → 临时会话 → MCP Server → TOON 压缩结果
 AI → resources → Registry._resources (缓存) / read_resource() → 资源列表或内容
+```
+
+### Session Isolation 模式
+
+使用 FastMCP 的 client_factory 模式实现会话隔离：
+
+```python
+# Registry 初始化时创建 factory
+factory = self._create_client_factory(server_config)
+self._client_factories[server_config.name] = factory
+
+# Executor 每次请求创建新会话
+factory = self._registry.get_client_factory(server_name)
+client = factory()
+async with client:
+    result = await client.call_tool(tool_name, arguments)
+# 会话自动关闭
 ```
 
 ## 关键实现细节
@@ -129,10 +147,12 @@ async def inspect(...):
 
 ### 6. 健康检查
 
-`HealthChecker` 在后台线程中定期探测服务器健康状态：
+`HealthChecker` 在后台定期探测服务器健康状态：
+- 使用临时会话（通过 `client_factory()` 创建）
+- 使用 `async with client:` 自动管理会话生命周期
+- 检查完成后自动关闭临时会话
 - 失败阈值达到后标记服务器不健康
 - 提供 `get_server_health()` 查询状态
-- 与 `Registry.reconnect_server()` 联动
 
 ## 配置
 

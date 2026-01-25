@@ -11,6 +11,7 @@
 | 2026-01-25 | TOON 压缩 + 多模态 + 健康检查 | [toon_multimodal_requirements.md](./2026-01-25_toon_multimodal_requirements.md) | [toon_multimodal_verification.md](./2026-01-25_toon_multimodal_verification.md) |
 | 2026-01-25 | Schema 压缩 | [schema_compression_requirements.md](./2026-01-25_schema_compression_requirements.md) | [schema_compression_verification.md](./2026-01-25_schema_compression_verification.md) |
 | 2026-01-25 | MCP Resource 支持 | [mcp_resource_requirements.md](./2026-01-25_mcp_resource_requirements.md) | [mcp_resource_verification.md](./2026-01-25_mcp_resource_verification.md) |
+| 2026-01-25 | Session Isolation 重构 | [proxyprovider_refactor_requirements.md](./2026-01-25_proxyprovider_refactor_requirements.md) | [proxyprovider_refactor_verification.md](./2026-01-25_proxyprovider_refactor_verification.md) |
 
 ---
 
@@ -25,20 +26,21 @@ AI → inspect (查询工具) / exec (执行工具) / resources (读取资源)
           ↓
     MCPX Proxy
           ↓
-    Schema/Resource 缓存 + 连接池
+    Schema/Resource 缓存 + client_factory
           ↓
    Server 1 · Server 2 · Server N
+   (Session Isolation: 每次请求独立会话)
 ```
 
 ## 核心类
 
 | 类 | 文件 | 职责 |
 |----|------|------|
-| `Registry` | registry.py | 连接管理、工具/资源缓存、健康检查 |
-| `Executor` | executor.py | 工具执行、TOON 压缩 |
+| `Registry` | registry.py | client_factory 管理、工具/资源缓存、健康检查 |
+| `Executor` | executor.py | 使用 client_factory 执行工具、TOON 压缩 |
 | `ResourceInfo` | registry.py | 资源信息数据模型 |
 | `ToonCompressor` | compression.py | TOON 压缩实现 |
-| `HealthChecker` | health.py | 健康检查和心跳 |
+| `HealthChecker` | health.py | 健康检查（使用临时会话） |
 | `SchemaConverter` | schema_ts.py | JSON Schema → TypeScript 转换 |
 
 ## 工具接口

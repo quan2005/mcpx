@@ -5,8 +5,8 @@
 根据 [验证文档](./requirements/)，核心功能（8 个条款）已全部完成：
 
 - ✅ FastMCP 框架架构
-- ✅ 工具注册表与缓存
-- ✅ 长连接执行器
+- ✅ 工具注册表与缓存（Session Isolation 模式）
+- ✅ client_factory 执行器（每次请求独立会话）
 - ✅ MCP 代理服务器（inspect + exec + resources）
 - ✅ 双传输方式（stdio + HTTP/SSE）
 - ✅ 配置驱动
@@ -18,12 +18,13 @@
 ## 已完成功能
 
 | # | 功能 | PR | 日期 |
-|---|------|----|----|
+|---|------|----|----| 
 | 1 | 核心功能（Registry、Executor、inspect/exec） | #1 | 2026-01-24 |
 | 2 | Docker 支持 | #2 | 2026-01-24 |
 | 3 | TOON 压缩 + 健康检查 + 多模态内容 | #3 | 2026-01-25 |
 | 4 | Schema 压缩（TypeScript 风格） | #4 | 2026-01-25 |
 | 5 | MCP Resource 动态加载 | #5 | 2026-01-25 |
+| 6 | 连接稳定性重构（Session Isolation） | - | 2026-01-25 |
 
 ---
 
@@ -31,22 +32,20 @@
 
 ### P0 - 紧急 / 高价值
 
-#### 1. 🔄 连接稳定性（ProxyProvider 重构）
-**状态**：待开发
+#### 1. ✅ 连接稳定性（Session Isolation 重构）
+**状态**：已完成 ✅
 
-**描述**：采用 FastMCP ProxyProvider 重构连接管理，利用其 Session Isolation 特性获得连接恢复能力。
+**描述**：采用 FastMCP 的 client_factory 模式重构连接管理，实现 Session Isolation。
 
-**背景**：
-FastMCP ProxyProvider 的 Session Isolation 设计意味着每个请求可获得独立会话，无需手动实现重连逻辑：
-- 当前 MCPX：长连接 + 手动重连 = 复杂度高
-- ProxyProvider：会话隔离 = 隐式连接恢复
+**完成内容**：
+- ✅ Registry 使用 `_client_factories` 替代 `_sessions`
+- ✅ Executor 每次请求通过 `factory()` 创建新会话
+- ✅ 使用 `async with client:` 自动管理会话生命周期
+- ✅ 移除 `reconnect_server()` 手动重连逻辑
+- ✅ HealthChecker 使用临时会话进行检测
+- ✅ 202 个测试通过，覆盖率 75%
 
-**实现要点**：
-- 使用 `ProxyClient` 替代手动 `Client` 管理
-- 利用 session isolation 特性处理连接断开
-- 保持 `inspect`/`exec` 接口不变
-
-**影响范围**：`src/mcpx/registry.py`
+**影响范围**：`registry.py`, `executor.py`, `health.py`
 
 ---
 
@@ -146,8 +145,11 @@ FastMCP ProxyProvider 的 Session Isolation 设计意味着每个请求可获得
 - ✅ MCP Resource 动态加载
 - ✅ resources 工具（列表/读取资源）
 
-### v0.4.0 - 稳定性版本（规划）
-- [ ] 连接稳定性（ProxyProvider 重构）
+### v0.4.0 - 稳定性版本 ✅
+- ✅ 连接稳定性（Session Isolation 重构）
+- ✅ 移除长连接和手动重连逻辑
+- ✅ client_factory 模式
+- ✅ 202 个测试，75% 覆盖率
 
 ### v0.5.0 - 优化版本（规划）
 - [ ] 可观测性增强
@@ -160,4 +162,4 @@ FastMCP ProxyProvider 的 Session Isolation 设计意味着每个请求可获得
 
 ---
 
-*最后更新：2026-01-25（MCP Resource 支持已完成）*
+*最后更新：2026-01-25（Session Isolation 重构已完成）*

@@ -136,22 +136,6 @@ class Executor:
                 error=str(e),
             )
 
-        # Extract data from result
-        data = self._extract_result_data(result)
-
-        # Apply TOON compression if enabled and beneficial
-        compressed_data, was_compressed = self._compressor.compress(data)
-
-        return ExecutionResult(
-            server_name=server_name,
-            tool_name=tool_name,
-            success=True,
-            data=compressed_data,  # 压缩后的数据（用于 content）
-            raw_data=data,  # 原始数据（用于 structuredContent）
-            compressed=was_compressed,
-            format="toon" if was_compressed else "json",
-        )
-
     def _extract_result_data(self, result: Any) -> Any:
         """Extract data from CallToolResult.
 
@@ -287,19 +271,6 @@ class Executor:
             return data.model_dump()
         # Fallback to string representation
         return str(data)
-
-    def _is_connection_error(self, error: Exception) -> bool:
-        """Check if error indicates a connection problem that may be recoverable."""
-        error_str = str(error)
-        connection_indicators = [
-            "Client is not connected",
-            "nesting counter",
-            "Connection closed",
-            "Connection reset",
-            "Connection refused",
-            "Broken pipe",
-        ]
-        return any(indicator in error_str for indicator in connection_indicators)
 
     async def execute_many(
         self, calls: list[tuple[str, str, dict[str, Any]]]

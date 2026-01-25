@@ -108,10 +108,11 @@ class ResourceInfo(BaseModel):
 class Registry:
     """Registry for MCP servers and their tools.
 
-    On startup:
-    - Connects to all configured MCP servers
-    - Maintains long-lived connections
-    - Fetches and caches tool lists and schemas
+    Uses session isolation pattern:
+    - Creates client_factory for each server on startup
+    - Fetches and caches tool/resource schemas
+    - Each request uses a fresh session via client_factory
+    - Sessions are automatically closed after use
     - Starts health checking if enabled
     """
 
@@ -122,8 +123,7 @@ class Registry:
             config: Proxy configuration with MCP server list
         """
         self._config = config
-        self._sessions: dict[str, McpClient] = {}  # TODO: Remove after refactor
-        self._client_factories: dict[str, Callable[[], McpClient]] = {}  # New: session isolation
+        self._client_factories: dict[str, Callable[[], McpClient]] = {}
         self._tools: dict[str, ToolInfo] = {}
         self._resources: dict[str, ResourceInfo] = {}
         self._server_infos: dict[str, ServerInfo] = {}
@@ -135,8 +135,8 @@ class Registry:
             check_timeout=config.health_check_timeout,
             failure_threshold=config.health_check_failure_threshold,
         )
-        # Set callback for health checker to get sessions
-        self._health_checker.set_session_callback(self._get_session_for_health_check)
+        # Set callback for health checker to get client factory
+        self._health_checker.set_session_callback(self._get_client_for_health_check)
 
     def _create_client_factory(
         self, server_config: McpServerConfig
@@ -183,11 +183,11 @@ class Registry:
             await self.initialize()
 
     async def initialize(self) -> None:
-        """Initialize connections to all MCP servers.
+        """Initialize client factories and fetch tool/resource schemas.
 
-        Creates client factories and fetches tool/resource schemas.
-        For backward compatibility, also maintains _sessions dictionary.
-        Failed connections don't prevent other servers from loading.
+        Creates client factories for each server and uses temporary sessions
+        to fetch and cache tool/resource schemas. Sessions are closed after
+        schema fetching. Failed connections don't prevent other servers from loading.
         Starts health checking if enabled.
         """
         if self._initialized:
@@ -197,78 +197,74 @@ class Registry:
             try:
                 # Create client factory
                 factory = self._create_client_factory(server_config)
-                self._client_factories[server_config.name] = factory
 
-                # Create session and fetch schemas
-                client = factory()
-                await client.__aenter__()
-
-                # Cache server information
-                init_result = client.initialize_result
-                if init_result and init_result.serverInfo:
-                    self._server_infos[server_config.name] = ServerInfo(
-                        name=server_config.name,
-                        server_name=init_result.serverInfo.name or server_config.name,
-                        version=init_result.serverInfo.version or "unknown",
-                        instructions=init_result.instructions,
-                    )
-                else:
-                    self._server_infos[server_config.name] = ServerInfo(
-                        name=server_config.name,
-                        server_name=server_config.name,
-                        version="unknown",
-                        instructions=None,
-                    )
-
-                # Fetch and cache tools
-                tools = await client.list_tools()
-                logger.info(f"Server '{server_config.name}' has {len(tools)} tool(s)")
-
-                for tool in tools:
-                    tool_key = f"{server_config.name}:{tool.name}"
-                    self._tools[tool_key] = ToolInfo(
-                        server_name=server_config.name,
-                        name=tool.name,
-                        description=tool.description or "",
-                        input_schema=tool.inputSchema or {},
-                    )
-
-                # Fetch and cache resources
-                try:
-                    resources = await client.list_resources()
-                    logger.info(f"Server '{server_config.name}' has {len(resources)} resource(s)")
-
-                    for resource in resources:
-                        resource_key = f"{server_config.name}:{resource.uri}"
-
-                        # Generate description for text resources
-                        description = resource.description
-                        if not description and _is_text_mime_type(resource.mimeType):
-                            try:
-                                contents = await client.read_resource(str(resource.uri))
-                                if contents and len(contents) > 0:
-                                    first_content = contents[0]
-                                    if hasattr(first_content, "text"):
-                                        text_content = first_content.text
-                                        description = text_content[:100]
-                                        if len(text_content) > 100:
-                                            description += "..."
-                            except Exception as e:
-                                logger.debug(f"Failed to read resource for description: {e}")
-
-                        self._resources[resource_key] = ResourceInfo(
-                            server_name=server_config.name,
-                            uri=str(resource.uri),
-                            name=resource.name,
-                            description=description,
-                            mime_type=resource.mimeType,
-                            size=resource.size,
+                # Use temporary session to fetch schemas
+                async with factory() as client:
+                    # Only add factory after successful connection
+                    self._client_factories[server_config.name] = factory
+                    # Cache server information
+                    init_result = client.initialize_result
+                    if init_result and init_result.serverInfo:
+                        self._server_infos[server_config.name] = ServerInfo(
+                            name=server_config.name,
+                            server_name=init_result.serverInfo.name or server_config.name,
+                            version=init_result.serverInfo.version or "unknown",
+                            instructions=init_result.instructions,
                         )
-                except Exception as e:
-                    logger.warning(f"Failed to list resources from '{server_config.name}': {e}")
+                    else:
+                        self._server_infos[server_config.name] = ServerInfo(
+                            name=server_config.name,
+                            server_name=server_config.name,
+                            version="unknown",
+                            instructions=None,
+                        )
 
-                # Store session for backward compatibility (will be removed in later phase)
-                self._sessions[server_config.name] = client
+                    # Fetch and cache tools
+                    tools = await client.list_tools()
+                    logger.info(f"Server '{server_config.name}' has {len(tools)} tool(s)")
+
+                    for tool in tools:
+                        tool_key = f"{server_config.name}:{tool.name}"
+                        self._tools[tool_key] = ToolInfo(
+                            server_name=server_config.name,
+                            name=tool.name,
+                            description=tool.description or "",
+                            input_schema=tool.inputSchema or {},
+                        )
+
+                    # Fetch and cache resources
+                    try:
+                        resources = await client.list_resources()
+                        logger.info(f"Server '{server_config.name}' has {len(resources)} resource(s)")
+
+                        for resource in resources:
+                            resource_key = f"{server_config.name}:{resource.uri}"
+
+                            # Generate description for text resources
+                            description = resource.description
+                            if not description and _is_text_mime_type(resource.mimeType):
+                                try:
+                                    contents = await client.read_resource(str(resource.uri))
+                                    if contents and len(contents) > 0:
+                                        first_content = contents[0]
+                                        if hasattr(first_content, "text"):
+                                            text_content = first_content.text
+                                            description = text_content[:100]
+                                            if len(text_content) > 100:
+                                                description += "..."
+                                except Exception as e:
+                                    logger.debug(f"Failed to read resource for description: {e}")
+
+                            self._resources[resource_key] = ResourceInfo(
+                                server_name=server_config.name,
+                                uri=str(resource.uri),
+                                name=resource.name,
+                                description=description,
+                                mime_type=resource.mimeType,
+                                size=resource.size,
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to list resources from '{server_config.name}': {e}")
 
             except Exception as e:
                 logger.error(f"Failed to connect to server '{server_config.name}': {e}")
@@ -276,8 +272,8 @@ class Registry:
         self._initialized = True
 
         # Start health checker if enabled
-        if self._config.health_check_enabled and self._sessions:
-            server_names = list(self._sessions.keys())
+        if self._config.health_check_enabled and self._client_factories:
+            server_names = list(self._client_factories.keys())
             await self._health_checker.start(server_names)
             logger.info(f"Health checker started for {len(server_names)} server(s)")
 
@@ -293,7 +289,7 @@ class Registry:
             return "No tools available."
 
         lines = ["Available tools (use inspect with server_name to get details):"]
-        for server_name in sorted(self._sessions.keys()):
+        for server_name in sorted(self._client_factories.keys()):
             lines.append(f"  Server: {server_name}")
             for tool in self.list_tools(server_name):
                 desc = tool.description[:60] + "..." if len(tool.description) > 60 else tool.description
@@ -400,7 +396,18 @@ class Registry:
         Returns:
             List of server names
         """
-        return list(self._sessions.keys())
+        return list(self._client_factories.keys())
+
+    def has_server(self, server_name: str) -> bool:
+        """Check if a server is connected.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            True if server exists, False otherwise
+        """
+        return server_name in self._client_factories
 
     def get_server_info(self, server_name: str) -> ServerInfo | None:
         """Get cached server information.
@@ -412,17 +419,6 @@ class Registry:
             ServerInfo if found, None otherwise
         """
         return self._server_infos.get(server_name)
-
-    def get_session(self, server_name: str) -> McpClient | None:
-        """Get active session for a server.
-
-        Args:
-            server_name: Name of the server
-
-        Returns:
-            Client session if exists, None otherwise
-        """
-        return self._sessions.get(server_name)
 
     def get_client_factory(self, server_name: str) -> Callable[[], McpClient] | None:
         """Get client factory for a server.
@@ -436,163 +432,41 @@ class Registry:
         return self._client_factories.get(server_name)
 
     @property
-    def sessions(self) -> dict[str, McpClient]:
-        """Get all active sessions."""
-        return self._sessions.copy()
-
-    @property
     def tools(self) -> dict[str, ToolInfo]:
         """Get all cached tools."""
         return self._tools.copy()
 
-    async def reconnect_server(self, server_name: str) -> bool:
-        """Reconnect to a specific server using client_factory.
-
-        Args:
-            server_name: Name of the server to reconnect
-
-        Returns:
-            True if reconnection succeeded, False otherwise
-        """
-        # Find the server config
-        server_config = None
-        for cfg in self._config.mcp_servers:
-            if cfg.name == server_name:
-                server_config = cfg
-                break
-
-        if server_config is None:
-            logger.error(f"Cannot reconnect: server '{server_name}' not in config")
-            return False
-
-        # Close existing session if any
-        old_client = self._sessions.pop(server_name, None)
-        if old_client is not None:
-            try:
-                await old_client.__aexit__(None, None, None)
-            except Exception:
-                pass
-
-        # Remove old tools for this server
-        keys_to_remove = [k for k in self._tools if k.startswith(f"{server_name}:")]
-        for key in keys_to_remove:
-            del self._tools[key]
-
-        # Remove old resources for this server
-        resource_keys_to_remove = [k for k in self._resources if k.startswith(f"{server_name}:")]
-        for key in resource_keys_to_remove:
-            del self._resources[key]
-
-        # Reconnect using _create_client_factory
-        try:
-            factory = self._create_client_factory(server_config)
-            self._client_factories[server_config.name] = factory
-
-            # Create new session
-            client = factory()
-            await client.__aenter__()
-
-            # Cache server information
-            init_result = client.initialize_result
-            if init_result and init_result.serverInfo:
-                self._server_infos[server_config.name] = ServerInfo(
-                    name=server_config.name,
-                    server_name=init_result.serverInfo.name or server_config.name,
-                    version=init_result.serverInfo.version or "unknown",
-                    instructions=init_result.instructions,
-                )
-            else:
-                self._server_infos[server_config.name] = ServerInfo(
-                    name=server_config.name,
-                    server_name=server_config.name,
-                    version="unknown",
-                    instructions=None,
-                )
-
-            # Fetch and cache tools
-            tools = await client.list_tools()
-            for tool in tools:
-                tool_key = f"{server_config.name}:{tool.name}"
-                self._tools[tool_key] = ToolInfo(
-                    server_name=server_config.name,
-                    name=tool.name,
-                    description=tool.description or "",
-                    input_schema=tool.inputSchema or {},
-                )
-
-            # Fetch and cache resources
-            try:
-                resources = await client.list_resources()
-                for resource in resources:
-                    resource_key = f"{server_config.name}:{resource.uri}"
-
-                    description = resource.description
-                    if not description and _is_text_mime_type(resource.mimeType):
-                        try:
-                            contents = await client.read_resource(str(resource.uri))
-                            if contents and len(contents) > 0:
-                                first_content = contents[0]
-                                if hasattr(first_content, "text"):
-                                    text_content = first_content.text
-                                    description = text_content[:100]
-                                    if len(text_content) > 100:
-                                        description += "..."
-                        except Exception:
-                            pass
-
-                    self._resources[resource_key] = ResourceInfo(
-                        server_name=server_config.name,
-                        uri=str(resource.uri),
-                        name=resource.name,
-                        description=description,
-                        mime_type=resource.mimeType,
-                        size=resource.size,
-                    )
-            except Exception:
-                pass  # Resource listing is optional
-
-            # Store session
-            self._sessions[server_config.name] = client
-
-            logger.info(f"Reconnected to server '{server_name}'")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to reconnect to server '{server_name}': {e}")
-            return False
-
     async def close(self) -> None:
-        """Close all sessions and stop health checker."""
-        import asyncio
+        """Stop health checker and clear caches.
 
+        Sessions are auto-managed via client_factory + async with pattern,
+        so no manual session cleanup needed.
+        """
         # Stop health checker
         await self._health_checker.stop()
 
-        # Close all sessions
-        for server_name, client in self._sessions.items():
-            try:
-                await client.__aexit__(None, None, None)
-                logger.info(f"Closed connection to '{server_name}'")
-            except asyncio.CancelledError:
-                # Expected when closing in a separate asyncio.run() context
-                logger.debug(f"Connection to '{server_name}' cancelled during close")
-            except Exception as e:
-                logger.error(f"Error closing connection to '{server_name}': {e}")
-
-        self._sessions.clear()
+        # Clear caches and factories
+        self._client_factories.clear()
         self._tools.clear()
         self._resources.clear()
         self._initialized = False
 
-    async def _get_session_for_health_check(self, server_name: str) -> McpClient | None:
-        """Get session for health checking.
+    async def _get_client_for_health_check(self, server_name: str) -> McpClient | None:
+        """Get a fresh client for health checking.
+
+        Returns a new client from the factory. The caller should use it
+        with `async with client:` to ensure proper cleanup.
 
         Args:
             server_name: Name of the server
 
         Returns:
-            Session if available, None otherwise
+            New client if factory exists, None otherwise
         """
-        return self._sessions.get(server_name)
+        factory = self._client_factories.get(server_name)
+        if factory is None:
+            return None
+        return factory()
 
     def get_health_status(self) -> HealthStatus:
         """Get current health status of all servers.
