@@ -225,8 +225,8 @@ def create_server(
             return json_schema_to_typescript(input_schema, max_description_len=300)
         return input_schema
 
-    # Build the inspect description
-    base_desc = "Inspect available MCP tools and their schemas.\n\n"
+    # Build the describe description
+    base_desc = "Query tool information from MCP servers.\n\n"
     if tools_description:
         full_desc = base_desc + tools_description
     else:
