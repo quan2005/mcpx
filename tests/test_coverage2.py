@@ -103,7 +103,7 @@ class TestLoadConfigCoverage:
         assert config.health_check_interval == 30
         assert config.health_check_timeout == 5
         assert config.toon_compression_enabled is True  # Now enabled by default
-        assert config.toon_compression_min_size == 3
+        assert config.toon_compression_min_size == 1
 
     def test_proxy_config_custom_values(self):
         """Test: ProxyConfig accepts custom values."""
