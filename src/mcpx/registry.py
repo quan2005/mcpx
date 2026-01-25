@@ -281,110 +281,6 @@ class Registry:
             await self._health_checker.start(server_names)
             logger.info(f"Health checker started for {len(server_names)} server(s)")
 
-    async def _connect_server(self, server_config: McpServerConfig) -> None:
-        """Connect to a single MCP server and cache its tools.
-
-        Args:
-            server_config: Server configuration
-        """
-        logger.info(f"Connecting to MCP server: {server_config.name}")
-
-        # Create transport based on type
-        if server_config.type == "http":
-            transport: StdioTransport | StreamableHttpTransport = StreamableHttpTransport(
-                url=server_config.url,  # type: ignore[arg-type]
-                headers=server_config.headers or {},
-            )
-        else:
-            # Default to stdio
-            transport = StdioTransport(
-                command=server_config.command,  # type: ignore[arg-type]
-                args=server_config.args,
-                env=server_config.env or {},
-            )
-
-        # Create client with transport
-        client: McpClient = Client(transport)
-
-        try:
-            # Connect and fetch tools
-            await client.__aenter__()
-
-            # Cache server information
-            init_result = client.initialize_result
-            if init_result and init_result.serverInfo:
-                self._server_infos[server_config.name] = ServerInfo(
-                    name=server_config.name,
-                    server_name=init_result.serverInfo.name or server_config.name,
-                    version=init_result.serverInfo.version or "unknown",
-                    instructions=init_result.instructions,
-                )
-            else:
-                self._server_infos[server_config.name] = ServerInfo(
-                    name=server_config.name,
-                    server_name=server_config.name,
-                    version="unknown",
-                    instructions=None,
-                )
-
-            tools = await client.list_tools()
-            logger.info(f"Server '{server_config.name}' has {len(tools)} tool(s)")
-
-            # Cache tool information
-            for tool in tools:
-                tool_key = f"{server_config.name}:{tool.name}"
-                self._tools[tool_key] = ToolInfo(
-                    server_name=server_config.name,
-                    name=tool.name,
-                    description=tool.description or "",
-                    input_schema=tool.inputSchema or {},
-                )
-
-            # Cache resource information
-            try:
-                resources = await client.list_resources()
-                logger.info(f"Server '{server_config.name}' has {len(resources)} resource(s)")
-                for resource in resources:
-                    resource_key = f"{server_config.name}:{resource.uri}"
-
-                    # Generate description for text resources without description
-                    description = resource.description
-                    if not description and _is_text_mime_type(resource.mimeType):
-                        try:
-                            contents = await client.read_resource(str(resource.uri))
-                            if contents and len(contents) > 0:
-                                first_content = contents[0]
-                                if hasattr(first_content, "text"):
-                                    text_content = first_content.text
-                                    # Use first 100 characters as description
-                                    description = text_content[:100]
-                                    if len(text_content) > 100:
-                                        description += "..."
-                        except Exception as e:
-                            logger.debug(f"Failed to read resource '{resource.uri}' for description: {e}")
-
-                    self._resources[resource_key] = ResourceInfo(
-                        server_name=server_config.name,
-                        uri=str(resource.uri),
-                        name=resource.name,
-                        description=description,
-                        mime_type=resource.mimeType,
-                        size=resource.size,
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to list resources from '{server_config.name}': {e}")
-
-            # Store session for later use
-            self._sessions[server_config.name] = client
-
-        except Exception as e:
-            logger.error(f"Error connecting to '{server_config.name}': {e}")
-            try:
-                await client.__aexit__(None, None, None)
-            except Exception:
-                pass
-            raise
-
     def get_tool_list_text(self) -> str:
         """Generate plain text list of available tools grouped by server.
 
@@ -550,7 +446,7 @@ class Registry:
         return self._tools.copy()
 
     async def reconnect_server(self, server_name: str) -> bool:
-        """Reconnect to a specific server.
+        """Reconnect to a specific server using client_factory.
 
         Args:
             server_name: Name of the server to reconnect
@@ -587,9 +483,77 @@ class Registry:
         for key in resource_keys_to_remove:
             del self._resources[key]
 
-        # Reconnect
+        # Reconnect using _create_client_factory
         try:
-            await self._connect_server(server_config)
+            factory = self._create_client_factory(server_config)
+            self._client_factories[server_config.name] = factory
+
+            # Create new session
+            client = factory()
+            await client.__aenter__()
+
+            # Cache server information
+            init_result = client.initialize_result
+            if init_result and init_result.serverInfo:
+                self._server_infos[server_config.name] = ServerInfo(
+                    name=server_config.name,
+                    server_name=init_result.serverInfo.name or server_config.name,
+                    version=init_result.serverInfo.version or "unknown",
+                    instructions=init_result.instructions,
+                )
+            else:
+                self._server_infos[server_config.name] = ServerInfo(
+                    name=server_config.name,
+                    server_name=server_config.name,
+                    version="unknown",
+                    instructions=None,
+                )
+
+            # Fetch and cache tools
+            tools = await client.list_tools()
+            for tool in tools:
+                tool_key = f"{server_config.name}:{tool.name}"
+                self._tools[tool_key] = ToolInfo(
+                    server_name=server_config.name,
+                    name=tool.name,
+                    description=tool.description or "",
+                    input_schema=tool.inputSchema or {},
+                )
+
+            # Fetch and cache resources
+            try:
+                resources = await client.list_resources()
+                for resource in resources:
+                    resource_key = f"{server_config.name}:{resource.uri}"
+
+                    description = resource.description
+                    if not description and _is_text_mime_type(resource.mimeType):
+                        try:
+                            contents = await client.read_resource(str(resource.uri))
+                            if contents and len(contents) > 0:
+                                first_content = contents[0]
+                                if hasattr(first_content, "text"):
+                                    text_content = first_content.text
+                                    description = text_content[:100]
+                                    if len(text_content) > 100:
+                                        description += "..."
+                        except Exception:
+                            pass
+
+                    self._resources[resource_key] = ResourceInfo(
+                        server_name=server_config.name,
+                        uri=str(resource.uri),
+                        name=resource.name,
+                        description=description,
+                        mime_type=resource.mimeType,
+                        size=resource.size,
+                    )
+            except Exception:
+                pass  # Resource listing is optional
+
+            # Store session
+            self._sessions[server_config.name] = client
+
             logger.info(f"Reconnected to server '{server_name}'")
             return True
         except Exception as e:
