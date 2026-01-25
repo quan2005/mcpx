@@ -114,18 +114,21 @@ class HealthChecker:
         self._status = HealthStatus()
         self._running = False
         self._task: asyncio.Task[None] | None = None
-        self._get_session_callback: Any | None = None  # Callback to get session
+        self._get_client_callback: Any | None = None  # Callback to get client from factory
 
     def set_session_callback(self, callback: Any) -> None:
-        """Set callback to get sessions for health checking.
+        """Set callback to get client for health checking.
 
         Args:
-            callback: Async callable that takes server_name and returns session or None
+            callback: Async callable that takes server_name and returns a new client or None
         """
-        self._get_session_callback = callback
+        self._get_client_callback = callback
 
     async def check_server(self, server_name: str) -> bool:
         """Check health of a single server.
+
+        Creates a temporary session using the client factory and closes it
+        afterwards using async with pattern.
 
         Args:
             server_name: Name of the server to check
@@ -133,24 +136,26 @@ class HealthChecker:
         Returns:
             True if server is healthy, False otherwise
         """
-        if self._get_session_callback is None:
-            logger.warning("Session callback not set, skipping health check")
+        if self._get_client_callback is None:
+            logger.warning("Client callback not set, skipping health check")
             return False
 
         try:
-            session = await self._get_session_callback(server_name)
-            if session is None:
-                self._status.update_server(server_name, False, "No active session")
+            client = await self._get_client_callback(server_name)
+            if client is None:
+                self._status.update_server(server_name, False, "No client factory")
                 return False
 
-            # Try to ping the server
-            if hasattr(session, "ping"):
-                await asyncio.wait_for(session.ping(), timeout=self._check_timeout)
-            else:
-                # Fallback: try to list tools (lightweight operation)
-                await asyncio.wait_for(
-                    session.list_tools(), timeout=self._check_timeout
-                )
+            # Use async with to ensure proper cleanup
+            async with client:
+                # Try to ping the server
+                if hasattr(client, "ping"):
+                    await asyncio.wait_for(client.ping(), timeout=self._check_timeout)
+                else:
+                    # Fallback: try to list tools (lightweight operation)
+                    await asyncio.wait_for(
+                        client.list_tools(), timeout=self._check_timeout
+                    )
 
             self._status.update_server(server_name, True)
             logger.debug(f"Health check passed for '{server_name}'")
@@ -188,7 +193,7 @@ class HealthChecker:
         while self._running:
             try:
                 # Get current server list from registry callback
-                if self._get_session_callback:
+                if self._get_client_callback:
                     # Assuming callback can also return server names
                     # We'll update this in registry integration
                     pass

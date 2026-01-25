@@ -83,7 +83,7 @@ class Executor:
     async def execute(
         self, server_name: str, tool_name: str, arguments: dict[str, Any]
     ) -> ExecutionResult:
-        """Execute a tool through the appropriate server connection.
+        """Execute a tool using a fresh session for each request.
 
         Args:
             server_name: Name of the server
@@ -93,85 +93,48 @@ class Executor:
         Returns:
             ExecutionResult with success status and data or error
         """
-        # Get session
-        session = self._registry.get_session(server_name)
-        if session is None:
+        # Get client factory
+        factory = self._registry.get_client_factory(server_name)
+        if factory is None:
             return ExecutionResult(
                 server_name=server_name,
                 tool_name=tool_name,
                 success=False,
                 data=None,
-                error=f"No active connection to server '{server_name}'",
+                error=f"No client factory for server '{server_name}'",
             )
 
-        # Execute tool
+        # Create fresh client for this request
+        client = factory()
         try:
-            result = await session.call_tool(tool_name, arguments=arguments)
+            async with client:
+                result = await client.call_tool(tool_name, arguments=arguments)
+
+            # Extract data from result
+            data = self._extract_result_data(result)
+
+            # Apply TOON compression if enabled and beneficial
+            compressed_data, was_compressed = self._compressor.compress(data)
+
+            return ExecutionResult(
+                server_name=server_name,
+                tool_name=tool_name,
+                success=True,
+                data=compressed_data,
+                raw_data=data,
+                compressed=was_compressed,
+                format="toon" if was_compressed else "json",
+            )
+
         except Exception as e:
-            if self._is_connection_error(e):
-                # Try to reconnect through registry
-                logger.info(f"Connection error for '{server_name}', attempting reconnect...")
-                reconnected = await self._registry.reconnect_server(server_name)
-                if reconnected:
-                    # Get new session and retry
-                    new_session = self._registry.get_session(server_name)
-                    if new_session is not None:
-                        try:
-                            result = await new_session.call_tool(
-                                tool_name, arguments=arguments
-                            )
-                        except Exception as retry_error:
-                            logger.error(
-                                f"Error executing tool '{server_name}:{tool_name}' after reconnect: {retry_error}"
-                            )
-                            return ExecutionResult(
-                                server_name=server_name,
-                                tool_name=tool_name,
-                                success=False,
-                                data=None,
-                                error=str(retry_error),
-                            )
-                    else:
-                        return ExecutionResult(
-                            server_name=server_name,
-                            tool_name=tool_name,
-                            success=False,
-                            data=None,
-                            error=f"Reconnected but no session for '{server_name}'",
-                        )
-                else:
-                    return ExecutionResult(
-                        server_name=server_name,
-                        tool_name=tool_name,
-                        success=False,
-                        data=None,
-                        error=f"Failed to reconnect to '{server_name}': {e}",
-                    )
-            else:
-                logger.error(f"Error executing tool '{server_name}:{tool_name}': {e}")
-                return ExecutionResult(
-                    server_name=server_name,
-                    tool_name=tool_name,
-                    success=False,
-                    data=None,
-                    error=str(e),
-                )
-
-        # Extract data from result
-        data = self._extract_result_data(result)
-
-        # Apply TOON compression if enabled and beneficial
-        compressed_data, was_compressed = self._compressor.compress(data)
-
-        return ExecutionResult(
-            server_name=server_name,
-            tool_name=tool_name,
-            success=True,
-            data=compressed_data,  # 压缩后的数据（用于 content）
-            raw_data=data,  # 原始数据（用于 structuredContent）
-            compressed=was_compressed,
-            format="toon" if was_compressed else "json",
-        )
+            logger.error(f"Error executing tool '{server_name}:{tool_name}': {e}")
+            return ExecutionResult(
+                server_name=server_name,
+                tool_name=tool_name,
+                success=False,
+                data=None,
+                error=str(e),
+            )
 
     def _extract_result_data(self, result: Any) -> Any:
         """Extract data from CallToolResult.
@@ -308,19 +271,6 @@ class Executor:
             return data.model_dump()
         # Fallback to string representation
         return str(data)
-
-    def _is_connection_error(self, error: Exception) -> bool:
-        """Check if error indicates a connection problem that may be recoverable."""
-        error_str = str(error)
-        connection_indicators = [
-            "Client is not connected",
-            "nesting counter",
-            "Connection closed",
-            "Connection reset",
-            "Connection refused",
-            "Broken pipe",
-        ]
-        return any(indicator in error_str for indicator in connection_indicators)
 
     async def execute_many(
         self, calls: list[tuple[str, str, dict[str, Any]]]

@@ -16,7 +16,7 @@ class TestExecutorCoverage:
 
     @pytest.mark.asyncio
     async def test_executor_session_not_connected(self):
-        """Test: Executor handles no active session gracefully."""
+        """Test: Executor handles no client factory gracefully."""
         from mcpx.registry import Registry
 
         config = ProxyConfig(mcp_servers=[])
@@ -27,11 +27,11 @@ class TestExecutorCoverage:
 
         result = await executor.execute("nonexistent", "some_tool", {})
         assert not result.success
-        assert "No active connection" in result.error
+        assert "No client factory" in result.error
 
     @pytest.mark.asyncio
-    async def test_executor_reconnect_success(self):
-        """Test: Executor successfully reconnects after connection error."""
+    async def test_executor_creates_fresh_session(self):
+        """Test: Executor creates fresh session for each request."""
         from mcpx.registry import Registry
 
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
@@ -49,27 +49,18 @@ class TestExecutorCoverage:
         registry = Registry(config)
         await registry.initialize()
 
-        # Replace session with a mock that simulates connection error
-        original_session = registry.get_session("filesystem")
-
-        class BrokenSession:
-            async def call_tool(self, name, arguments):
-                raise RuntimeError("Client is not connected")
-
-        # Temporarily replace with broken session
-        registry._sessions["filesystem"] = BrokenSession()
-
         executor = Executor(registry)
 
         try:
-            # This will trigger reconnect - reconnect should succeed
-            result = await executor.execute("filesystem", "list_allowed_directories", {})
-            # After reconnection, it should work
-            assert result.success
+            # Each execution creates a fresh session via factory
+            result1 = await executor.execute("filesystem", "list_allowed_directories", {})
+            assert result1.success
+
+            result2 = await executor.execute("filesystem", "list_allowed_directories", {})
+            assert result2.success
+
+            # Both should succeed because each request gets a fresh session
         finally:
-            # Restore and close
-            if registry.get_session("filesystem") is BrokenSession:
-                registry._sessions["filesystem"] = original_session
             await registry.close()
 
     @pytest.mark.asyncio
@@ -170,15 +161,15 @@ class TestRegistryCoverage:
     """Tests to improve registry coverage."""
 
     @pytest.mark.asyncio
-    async def test_registry_reconnect_nonexistent_server(self):
-        """Test: Reconnecting to non-existent server returns False."""
+    async def test_registry_get_client_factory_nonexistent_server(self):
+        """Test: Getting factory for non-existent server returns None."""
         from mcpx.registry import Registry
 
         config = ProxyConfig(mcp_servers=[])
         registry = Registry(config)
 
-        result = await registry.reconnect_server("nonexistent")
-        assert result is False
+        factory = registry.get_client_factory("nonexistent")
+        assert factory is None
 
     @pytest.mark.asyncio
     async def test_registry_get_server_info_not_found(self):
@@ -211,18 +202,18 @@ class TestRegistryCoverage:
         registry = Registry(config)
         await registry.initialize()
 
-        assert len(registry.sessions) > 0
+        assert len(registry.list_servers()) > 0
         assert len(registry.tools) > 0
 
         await registry.close()
 
-        assert len(registry.sessions) == 0
+        assert len(registry.list_servers()) == 0
         assert len(registry.tools) == 0
         assert not registry._initialized
 
     @pytest.mark.asyncio
-    async def test_registry_reconnect_with_close_error(self):
-        """Test: Reconnect handles session close errors gracefully."""
+    async def test_registry_session_isolation_pattern(self):
+        """Test: Registry uses session isolation - each request gets fresh client."""
         from mcpx.registry import Registry
 
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
@@ -240,25 +231,16 @@ class TestRegistryCoverage:
         registry = Registry(config)
         await registry.initialize()
 
-        # Mock a broken close
-        original_session = registry.get_session("filesystem")
+        # Verify client factory works
+        factory = registry.get_client_factory("filesystem")
+        assert factory is not None
 
-        class BrokenSession:
-            async def __aexit__(self, *args):
-                raise RuntimeError("Close failed")
+        # Each call creates a new client instance
+        client1 = factory()
+        client2 = factory()
+        assert client1 is not client2
 
-        registry._sessions["filesystem"] = BrokenSession()
-
-        try:
-            # Reconnect should handle close error and still succeed
-            result = await registry.reconnect_server("filesystem")
-            # Reconnect should succeed despite close error
-            assert result is True
-        finally:
-            # Clean up properly
-            if registry.get_session("filesystem") is BrokenSession:
-                registry._sessions["filesystem"] = original_session
-            await registry.close()
+        await registry.close()
 
     def test_get_tool_list_text_empty(self):
         """Test: get_tool_list_text returns message when no tools."""
@@ -320,12 +302,18 @@ class TestHealthCoverage:
         """Test: Health checker handles session exceptions."""
         from mcpx.health import HealthChecker
 
-        class BrokenSession:
+        class BrokenClient:
             async def ping(self):
                 raise ValueError("Session broken")
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
         async def callback(name):
-            return BrokenSession()
+            return BrokenClient()
 
         checker = HealthChecker()
         checker.set_session_callback(callback)
@@ -344,12 +332,18 @@ class TestHealthCoverage:
         """Test: Health checker falls back to list_tools."""
         from mcpx.health import HealthChecker
 
-        class SessionNoPing:
+        class ClientNoPing:
             async def list_tools(self):
                 return []  # Success
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
         async def callback(name):
-            return SessionNoPing()
+            return ClientNoPing()
 
         checker = HealthChecker()
         checker.set_session_callback(callback)

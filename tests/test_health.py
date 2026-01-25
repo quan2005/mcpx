@@ -129,14 +129,14 @@ class TestHealthChecker:
 
     @pytest.mark.asyncio
     async def test_health_checker_set_callback(self):
-        """Test: Session callback can be set."""
+        """Test: Client callback can be set."""
         checker = HealthChecker()
 
         async def mock_callback(name: str):
             return None
 
         checker.set_session_callback(mock_callback)
-        assert checker._get_session_callback is mock_callback
+        assert checker._get_client_callback is mock_callback
 
     @pytest.mark.asyncio
     async def test_health_checker_start_stop(self):
@@ -166,13 +166,19 @@ class TestHealthChecker:
         """Test: Check server with successful ping."""
         checker = HealthChecker()
 
-        # Mock session with ping
-        class MockSession:
+        # Mock client with ping and async context manager support
+        class MockClient:
             async def ping(self):
                 return None
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
         async def mock_callback(name: str):
-            return MockSession()
+            return MockClient()
 
         checker.set_session_callback(mock_callback)
 
@@ -185,13 +191,19 @@ class TestHealthChecker:
         """Test: Check server handles timeout."""
         checker = HealthChecker(check_timeout=0.1)
 
-        # Mock session that times out
-        class MockSession:
+        # Mock client that times out
+        class MockClient:
             async def ping(self):
                 await asyncio.sleep(1)  # Longer than timeout
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
         async def mock_callback(name: str):
-            return MockSession()
+            return MockClient()
 
         checker.set_session_callback(mock_callback)
 
@@ -204,13 +216,19 @@ class TestHealthChecker:
         """Test: Check server falls back to list_tools when no ping."""
         checker = HealthChecker()
 
-        # Mock session without ping but with list_tools
-        class MockSession:
+        # Mock client without ping but with list_tools and async context manager
+        class MockClient:
             async def list_tools(self):
                 return []
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
         async def mock_callback(name: str):
-            return MockSession()
+            return MockClient()
 
         checker.set_session_callback(mock_callback)
 
@@ -222,12 +240,18 @@ class TestHealthChecker:
         """Test: Get health status for specific server."""
         checker = HealthChecker()
 
-        class MockSession:
+        class MockClient:
             async def ping(self):
                 return None
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
         async def mock_callback(name: str):
-            return MockSession()
+            return MockClient()
 
         checker.set_session_callback(mock_callback)
 

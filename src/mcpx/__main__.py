@@ -76,11 +76,25 @@ def generate_tools_description(registry: "Registry") -> str:
             tools_desc_lines.append(f"  Server: {server_name}")
 
         for tool in registry.list_tools(server_name):
+            # Extract parameter list from input_schema
+            params = []
+            properties = tool.input_schema.get("properties", {})
+            required = set(tool.input_schema.get("required", []))
+            for param_name in properties.keys():
+                # Required params shown as-is, optional with ?
+                params.append(param_name if param_name in required else f"{param_name}?")
+            params_str = ", ".join(params) if params else ""
+
             # Truncate description if too long
             desc = tool.description
             if len(desc) > 80:
                 desc = desc[:77] + "..."
-            tools_desc_lines.append(f"    - {tool.name}: {desc}")
+
+            # Add params after tool name
+            if params_str:
+                tools_desc_lines.append(f"    - {tool.name}({params_str}): {desc}")
+            else:
+                tools_desc_lines.append(f"    - {tool.name}: {desc}")
     return "\n".join(tools_desc_lines)
 
 
@@ -241,12 +255,19 @@ def create_server(
             return ToolResult(content=data, structured_content={"result": data})
 
         # Check if server exists
-        if server_name not in registry.sessions:
+        if not registry.has_server(server_name):
             servers = registry.list_servers()
-            error_data = {
-                "error": f"Server '{server_name}' not found",
-                "available_servers": servers,
-            }
+            if servers:
+                error_data = {
+                    "error": f"Server '{server_name}' not found",
+                    "available_servers": servers,
+                }
+            else:
+                logger.warning(f"Server '{server_name}' not found - no MCP servers connected")
+                error_data = {
+                    "error": f"Server '{server_name}' not found",
+                    "hint": "No MCP servers are currently connected",
+                }
             return json.dumps(error_data, ensure_ascii=False)
 
         # Get specific tool
@@ -335,9 +356,16 @@ def create_server(
         await registry.ensure_initialized()
 
         # Check if server exists
-        if server_name not in registry.sessions:
+        if not registry.has_server(server_name):
             servers = registry.list_servers()
-            error_data = {"error": f"Server '{server_name}' not found. Available: {servers}"}
+            if servers:
+                error_data = {"error": f"Server '{server_name}' not found. Available: {servers}"}
+            else:
+                logger.warning(f"Server '{server_name}' not found - no MCP servers connected")
+                error_data = {
+                    "error": f"Server '{server_name}' not found",
+                    "hint": "No MCP servers are currently connected",
+                }
             return json.dumps(error_data, ensure_ascii=False)
 
         # Check if tool exists
@@ -422,12 +450,19 @@ def create_server(
         await registry.ensure_initialized()
 
         # Check if server exists
-        if server_name not in registry.sessions:
+        if not registry.has_server(server_name):
             servers = registry.list_servers()
-            error_data = {
-                "error": f"Server '{server_name}' not found",
-                "available_servers": servers,
-            }
+            if servers:
+                error_data = {
+                    "error": f"Server '{server_name}' not found",
+                    "available_servers": servers,
+                }
+            else:
+                logger.warning(f"Server '{server_name}' not found - no MCP servers connected")
+                error_data = {
+                    "error": f"Server '{server_name}' not found",
+                    "hint": "No MCP servers are currently connected",
+                }
             return json.dumps(error_data, ensure_ascii=False)
 
         # Read resource
@@ -493,7 +528,7 @@ def main() -> None:
 
     # Generate tools description
     tools = temp_registry.list_all_tools()
-    logger.info(f"Connected to {len(temp_registry.sessions)} server(s)")
+    logger.info(f"Connected to {len(temp_registry.list_servers())} server(s)")
     logger.info(f"Cached {len(tools)} tool(s)")
 
     # Generate tools description
@@ -551,7 +586,7 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
 
     # Generate tools description from temporary registry
     tools = temp_registry.list_all_tools()
-    logger.info(f"Pre-connected to {len(temp_registry.sessions)} server(s)")
+    logger.info(f"Pre-connected to {len(temp_registry.list_servers())} server(s)")
     logger.info(f"Discovered {len(tools)} tool(s)")
     tools_description = generate_tools_description(temp_registry)
 
@@ -576,7 +611,7 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
         await registry.initialize()
 
         tools = registry.list_all_tools()
-        logger.info(f"Connected to {len(registry.sessions)} server(s)")
+        logger.info(f"Connected to {len(registry.list_servers())} server(s)")
         logger.info(f"Cached {len(tools)} tool(s)")
 
         # Log available tools
