@@ -44,8 +44,11 @@ AI 收到的是一份简洁的"工具目录"，按需查询详情。
 uv sync
 
 # 配置 config.json
-# 运行
+# 运行（HTTP/SSE 模式）
 uv run mcpx config.json
+
+# 指定端口和主机
+uv run mcpx --port 3000 --host 127.0.0.1 config.json
 ```
 
 **config.json**
@@ -84,10 +87,10 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 | 特性 | 说明 |
 |------|------|
 | **按需加载** | 仅暴露 `describe`、`call`、`resources` 三个工具，AI 按需查询详情 |
-| **双传输** | stdio（Claude Desktop）+ HTTP/SSE |
+| **HTTP/SSE 传输** | 流式 HTTP 传输，支持实时双向通信 |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
-| **长连接** | 启动时连接所有服务器，复用连接池 |
+| **会话隔离** | 每次请求使用新会话，自动故障恢复 |
 | **多模态** | 透传图片、资源等非文本内容 |
 
 ### Schema 压缩示例
@@ -114,12 +117,12 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 ## 路线图
 
 ### ✅ 已完成
-- FastMCP 框架、工具缓存、长连接执行器
-- stdio + HTTP/SSE 双传输
+- FastMCP 框架、工具缓存、执行器
+- HTTP/SSE 流式传输
 - Schema/TOON 压缩、健康检查
 - 多模态内容透传、Docker 支持
 - MCP Resource 动态加载
-- client_factory 模式重构（会话隔离）
+- client_factory 模式（会话隔离）
 - E2E 测试 74% 覆盖率
 
 ### 📋 待办（P1 高优先级）

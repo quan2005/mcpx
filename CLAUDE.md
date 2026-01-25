@@ -21,11 +21,11 @@ uv run ruff check src/mcpx tests/
 # 类型检查
 uv run mypy src/mcpx
 
-# stdio 模式运行
+# HTTP/SSE 模式运行（默认端口 8000）
 uv run mcpx config.json
 
-# HTTP/SSE 模式运行
-uv run mcpx-sse config.json
+# 指定端口和主机
+uv run mcpx --port 3000 --host 127.0.0.1 config.json
 ```
 
 ## 技术栈
@@ -139,7 +139,7 @@ call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
 
 ### 4. HTTP/SSE 模式的事件循环
 
-`main_http()` 需要特殊处理：
+`main()` 需要特殊处理：
 - 在临时 asyncio.run() 中预连接获取工具描述
 - 在 uvicorn lifespan 中重新初始化 Registry
 - 避免跨事件循环的连接问题

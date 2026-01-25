@@ -49,7 +49,6 @@ __all__ = [
     "load_config",
     "create_server",
     "main",
-    "main_http",
 ]
 
 
@@ -534,48 +533,7 @@ def create_server(
     return mcp
 
 
-def main() -> None:
-    """Main entry point for stdio transport."""
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    _setup_fastmcp_logging()
-
-    # Default config path
-    config_path = Path(__file__).parent.parent.parent / "config.json"
-
-    # Allow override via command line
-    if len(sys.argv) > 1:
-        config_path = Path(sys.argv[1])
-
-    # Load configuration
-    config = load_config(config_path)
-    logger.info(f"Loaded {len(config.mcp_servers)} server(s) from {config_path}")
-
-    # Initialize registry first to generate tools description
-    from mcpx.registry import Registry
-
-    temp_registry = Registry(config)
-    asyncio.run(temp_registry.initialize())
-
-    # Generate tools description
-    tools = temp_registry.list_all_tools()
-    logger.info(f"Connected to {len(temp_registry.list_servers())} server(s)")
-    logger.info(f"Cached {len(tools)} tool(s)")
-
-    # Generate tools description
-    tools_description = generate_tools_description(temp_registry)
-
-    # Generate resources description
-    resources_description = generate_resources_description(temp_registry)
-
-    # Create server with pre-generated tools/resources description and initialized registry
-    mcp = create_server(config, tools_description, resources_description, registry=temp_registry)
-
-    # Run the server
-    asyncio.run(mcp.run_async())
-
-
-def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
+def main(port: int = 8000, host: str = "0.0.0.0") -> None:
     """Main entry point for HTTP/SSE transport.
 
     Uses lazy initialization to ensure registry connections are established
@@ -696,4 +654,17 @@ def main_http(port: int = 8000, host: str = "0.0.0.0") -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MCPX - MCP proxy server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
+    parser.add_argument("config", nargs="?", default=None, help="Path to config.json file")
+
+    args = parser.parse_args()
+
+    # Override config path if provided
+    if args.config:
+        sys.argv = [sys.argv[0], args.config]
+
+    main(port=args.port, host=args.host)
