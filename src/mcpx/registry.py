@@ -373,23 +373,23 @@ class Registry:
     async def read_resource(
         self, server_name: str, uri: str
     ) -> Any | None:
-        """Read resource content from MCP server.
+        """Read resource content using a fresh session.
 
         Args:
             server_name: Name of the server
             uri: Resource URI to read
 
         Returns:
-            List of content items (TextResourceContents or BlobResourceContents),
-            or None if server not found/read fails
+            List of content items, or None if factory not found/read fails
         """
-        client = self._sessions.get(server_name)
-        if client is None:
+        factory = self._client_factories.get(server_name)
+        if factory is None:
             return None
 
         try:
-            contents = await client.read_resource(uri)
-            return contents
+            async with factory() as client:
+                contents = await client.read_resource(uri)
+                return contents
         except Exception as e:
             logger.error(f"Error reading resource '{uri}' from '{server_name}': {e}")
             return None
