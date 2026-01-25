@@ -177,8 +177,8 @@ def _extract_text_content(result) -> str:
     return str(result)
 
 
-async def test_exec_validation_returns_tool_schema():
-    """Test: exec returns tool schema on argument validation error."""
+async def test_call_validation_returns_tool_schema():
+    """Test: call returns tool schema on argument validation error."""
     config = ProxyConfig()
     registry = Registry(config)
     registry._initialized = True
@@ -207,22 +207,21 @@ async def test_exec_validation_returns_tool_schema():
 
     async with Client(mcp_server) as client:
         result = await client.call_tool(
-            "exec",
+            "call",
             arguments={
-                "server_name": "dummy",
-                "tool_name": "read_file",
+                "method": "dummy.read_file",
                 "arguments": {"mode": "fast"},
             },
         )
 
     content = _extract_text_content(result)
-    exec_result = _parse_response(content)
+    call_result = _parse_response(content)
 
     # New simplified format: no "success" key
-    assert "error" in exec_result
-    assert "Argument validation failed" in exec_result["error"]
+    assert "error" in call_result
+    assert "Argument validation failed" in call_result["error"]
     # tool_schema is now compressed to TypeScript format (default enabled)
-    assert "tool_schema" in exec_result
+    assert "tool_schema" in call_result
     # TypeScript format: {path: string; mode?: "fast" | "safe"}
-    assert "path: string" in exec_result["tool_schema"]
-    assert "mode?" in exec_result["tool_schema"]  # optional field
+    assert "path: string" in call_result["tool_schema"]
+    assert "mode?" in call_result["tool_schema"]  # optional field

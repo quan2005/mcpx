@@ -182,8 +182,8 @@ def create_server(
     """Create MCP server from configuration.
 
     The server exposes three tools:
-    - inspect: Get full schema of cached tools (with TOON compression support)
-    - exec: Execute tools through long-lived connections (with TOON compression support)
+    - describe: Get full schema of cached tools (with TOON compression support)
+    - call: Execute tools through long-lived connections (with TOON compression support)
     - resources: List or read resources from MCP servers
 
     Args:
@@ -233,15 +233,15 @@ def create_server(
         full_desc = base_desc + "Tools will be listed after initialization."
 
     @mcp.tool(description=full_desc)
-    async def inspect(
-        server_name: str,
-        tool_name: str | None = None,
+    async def describe(
+        method: str,
     ) -> ToolResult | str:
         """Query tool information from MCP servers.
 
         Args:
-            server_name: Server name (required). Lists all tools from this server.
-            tool_name: Specific tool name (optional). If provided, returns detailed schema for this tool.
+            method: Method identifier in "server" or "server.tool" format
+                - "server": List all tools from this server
+                - "server.tool": Get detailed schema for this tool
 
         Returns:
             ToolResult with:
@@ -250,10 +250,10 @@ def create_server(
 
         Examples:
             # List all tools from a server
-            inspect(server_name="filesystem")
+            describe(method="filesystem")
 
             # Get details for a specific tool
-            inspect(server_name="filesystem", tool_name="read_file")
+            describe(method="filesystem.read_file")
         """
         registry: Registry = mcp._registry  # type: ignore[attr-defined]
         executor: Executor = mcp._executor  # type: ignore[attr-defined]
@@ -277,6 +277,11 @@ def create_server(
             if config.include_structured_content:
                 return ToolResult(content=data, structured_content={"result": data})
             return ToolResult(content=data)
+
+        # Parse method string
+        parts = method.split(".", 1)
+        server_name = parts[0]
+        tool_name = parts[1] if len(parts) > 1 else None
 
         # Check if server exists
         if not registry.has_server(server_name):
@@ -358,26 +363,32 @@ def create_server(
         return None
 
     @mcp.tool
-    async def exec(
-        server_name: str,
-        tool_name: str,
+    async def call(
+        method: str,
         arguments: dict[str, object] | None = None,
     ) -> ToolResult | str | TextContent | ImageContent | EmbeddedResource | list[TextContent | ImageContent | EmbeddedResource]:
         """Execute an MCP tool.
 
         Args:
-            server_name: Server name (required)
-            tool_name: Tool name (required)
-            arguments: Tool arguments (use inspect to get schema)
+            method: Method identifier in "server.tool" format
+            arguments: Tool arguments (use describe to get schema)
 
         Example:
-            exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/file.txt"})
+            call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
         """
         executor: Executor = mcp._executor  # type: ignore[attr-defined]
 
         # Ensure registry is initialized
         registry: Registry = mcp._registry  # type: ignore[attr-defined]
         await registry.ensure_initialized()
+
+        # Parse method string
+        parts = method.split(".", 1)
+        if len(parts) != 2:
+            error_data = {"error": f"Invalid method format: '{method}'. Expected 'server.tool'"}
+            return json.dumps(error_data, ensure_ascii=False)
+
+        server_name, tool_name = parts
 
         # Check if server exists
         if not registry.has_server(server_name):
