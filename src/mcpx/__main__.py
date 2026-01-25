@@ -113,12 +113,29 @@ def generate_resources_description(registry: "Registry") -> str:
         if not resources:
             continue
 
-        resources_desc_lines.append(f"  Server: {server_name}")
+        # Get server info for description
+        server_info = registry.get_server_info(server_name)
+        if server_info and server_info.instructions:
+            server_desc = server_info.instructions
+            if len(server_desc) > 300:
+                server_desc = server_desc[:297] + "..."
+            resources_desc_lines.append(f"  Server: {server_name} - {server_desc}")
+        else:
+            resources_desc_lines.append(f"  Server: {server_name}")
+
         for resource in resources:
             # Build resource info line
             mime_info = f" [{resource.mime_type}]" if resource.mime_type else ""
             size_info = f" ({resource.size} bytes)" if resource.size is not None else ""
-            desc = f": {resource.description}" if resource.description else ""
+
+            # Truncate description if too long (consistent with tools)
+            desc = ""
+            if resource.description:
+                desc_text = resource.description
+                if len(desc_text) > 80:
+                    desc_text = desc_text[:77] + "..."
+                desc = f": {desc_text}"
+
             resources_desc_lines.append(
                 f"    - {resource.name} ({resource.uri}){mime_info}{size_info}{desc}"
             )
