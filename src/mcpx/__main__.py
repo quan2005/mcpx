@@ -56,45 +56,39 @@ __all__ = [
 def generate_tools_description(registry: "Registry") -> str:
     """Generate a compact description of all available tools.
 
+    Format: server.tool(param, param?): description
+
     Args:
         registry: Initialized registry with cached tools
 
     Returns:
-        Formatted string with all tools grouped by server
+        Formatted string with all tools in compact format
     """
     tools_desc_lines = ["Available tools:"]
-    for server_name in sorted(registry.list_servers()):
-        # Get server info for description
-        server_info = registry.get_server_info(server_name)
-        if server_info and server_info.instructions:
-            # Use instructions as server description
-            server_desc = server_info.instructions
-            if len(server_desc) > 300:
-                server_desc = server_desc[:297] + "..."
-            tools_desc_lines.append(f"  Server: {server_name} - {server_desc}")
-        else:
-            tools_desc_lines.append(f"  Server: {server_name}")
 
+    for server_name in sorted(registry.list_servers()):
         for tool in registry.list_tools(server_name):
             # Extract parameter list from input_schema
             params = []
             properties = tool.input_schema.get("properties", {})
             required = set(tool.input_schema.get("required", []))
-            for param_name in properties.keys():
+            for param_name in sorted(properties.keys()):
                 # Required params shown as-is, optional with ?
                 params.append(param_name if param_name in required else f"{param_name}?")
             params_str = ", ".join(params) if params else ""
 
-            # Truncate description if too long
+            # Truncate description if too long (60 chars)
             desc = tool.description
-            if len(desc) > 80:
-                desc = desc[:77] + "..."
+            if len(desc) > 60:
+                desc = desc[:57] + "..."
 
-            # Add params after tool name
+            # Format: server.tool(params): desc
+            full_name = f"{server_name}.{tool.name}"
             if params_str:
-                tools_desc_lines.append(f"    - {tool.name}({params_str}): {desc}")
+                tools_desc_lines.append(f"  - {full_name}({params_str}): {desc}")
             else:
-                tools_desc_lines.append(f"    - {tool.name}: {desc}")
+                tools_desc_lines.append(f"  - {full_name}: {desc}")
+
     return "\n".join(tools_desc_lines)
 
 
