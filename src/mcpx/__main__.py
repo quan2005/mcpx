@@ -304,8 +304,7 @@ def create_server(
                 }
                 return json.dumps(error_data, ensure_ascii=False)
             tool_data = {
-                "server_name": tool.server_name,
-                "name": tool.name,
+                "method": f"{tool.server_name}.{tool.name}",
                 "description": tool.description,
                 "input_schema": _maybe_compress_schema(tool.input_schema),
             }
@@ -315,8 +314,7 @@ def create_server(
         tools = registry.list_tools(server_name)
         tools_data = [
             {
-                "server_name": t.server_name,
-                "name": t.name,
+                "method": f"{t.server_name}.{t.name}",
                 "description": t.description,
                 "input_schema": _maybe_compress_schema(t.input_schema),
             }

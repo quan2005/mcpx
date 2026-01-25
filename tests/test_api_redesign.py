@@ -125,11 +125,10 @@ class TestDescribeAPI:
         assert isinstance(tools, list)
         assert len(tools) > 0
         for tool in tools:
-            assert "server_name" in tool
-            assert "name" in tool
+            assert "method" in tool
             assert "description" in tool
             assert "input_schema" in tool
-            assert tool["server_name"] == "filesystem"
+            assert tool["method"].startswith("filesystem.")
 
     async def test_describe_with_server_tool(self) -> None:
         """Test describe(method='server.tool') returns specific tool schema."""
@@ -154,7 +153,7 @@ class TestDescribeAPI:
             tools = _parse_response(_extract_text_content(list_result))
             assert len(tools) > 0
 
-            tool_name = tools[0]["name"]
+            tool_name = tools[0]["method"].split(".", 1)[1]
 
             # Get specific tool
             result = await client.call_tool(
@@ -165,10 +164,8 @@ class TestDescribeAPI:
         content = _extract_text_content(result)
         tool_info = _parse_response(content)
 
-        assert "server_name" in tool_info
-        assert "name" in tool_info
-        assert tool_info["server_name"] == "filesystem"
-        assert tool_info["name"] == tool_name
+        assert "method" in tool_info
+        assert tool_info["method"] == f"filesystem.{tool_name}"
         assert "description" in tool_info
         assert "input_schema" in tool_info
 
