@@ -76,6 +76,12 @@ AI → inspect (查询工具) / exec (执行工具) / resources (读取资源)
 - 二进制资源: 包含 uri、mime_type、blob (base64) 的字典
 - 多项内容: 内容项列表
 
+**示例**:
+```python
+# 读取文本资源
+resources(server_name="filesystem", uri="file:///tmp/file.txt")
+```
+
 ## 验证标准
 
 ### 8 大条款

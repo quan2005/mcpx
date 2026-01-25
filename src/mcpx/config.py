@@ -62,4 +62,8 @@ class ProxyConfig(BaseModel):
     # Schema compression configuration (TypeScript style)
     schema_compression_enabled: bool = True
 
+    # Structured content configuration
+    # If False, tools return only content (without structured_content)
+    include_structured_content: bool = False
+
     model_config = {"extra": "ignore"}
