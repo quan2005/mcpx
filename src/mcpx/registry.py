@@ -193,40 +193,43 @@ class Registry:
         if self._initialized:
             return
 
-        for server_config in self._config.mcp_servers:
+        for server_name, server_config in self._config.mcpServers.items():
             try:
+                # Validate server config
+                server_config.validate_for_server(server_name)
+
                 # Create client factory
                 factory = self._create_client_factory(server_config)
 
                 # Use temporary session to fetch schemas
                 async with factory() as client:
                     # Only add factory after successful connection
-                    self._client_factories[server_config.name] = factory
+                    self._client_factories[server_name] = factory
                     # Cache server information
                     init_result = client.initialize_result
                     if init_result and init_result.serverInfo:
-                        self._server_infos[server_config.name] = ServerInfo(
-                            name=server_config.name,
-                            server_name=init_result.serverInfo.name or server_config.name,
+                        self._server_infos[server_name] = ServerInfo(
+                            name=server_name,
+                            server_name=init_result.serverInfo.name or server_name,
                             version=init_result.serverInfo.version or "unknown",
                             instructions=init_result.instructions,
                         )
                     else:
-                        self._server_infos[server_config.name] = ServerInfo(
-                            name=server_config.name,
-                            server_name=server_config.name,
+                        self._server_infos[server_name] = ServerInfo(
+                            name=server_name,
+                            server_name=server_name,
                             version="unknown",
                             instructions=None,
                         )
 
                     # Fetch and cache tools
                     tools = await client.list_tools()
-                    logger.info(f"Server '{server_config.name}' has {len(tools)} tool(s)")
+                    logger.info(f"Server '{server_name}' has {len(tools)} tool(s)")
 
                     for tool in tools:
-                        tool_key = f"{server_config.name}:{tool.name}"
+                        tool_key = f"{server_name}:{tool.name}"
                         self._tools[tool_key] = ToolInfo(
-                            server_name=server_config.name,
+                            server_name=server_name,
                             name=tool.name,
                             description=tool.description or "",
                             input_schema=tool.inputSchema or {},
@@ -235,10 +238,10 @@ class Registry:
                     # Fetch and cache resources
                     try:
                         resources = await client.list_resources()
-                        logger.info(f"Server '{server_config.name}' has {len(resources)} resource(s)")
+                        logger.info(f"Server '{server_name}' has {len(resources)} resource(s)")
 
                         for resource in resources:
-                            resource_key = f"{server_config.name}:{resource.uri}"
+                            resource_key = f"{server_name}:{resource.uri}"
 
                             # Generate description for text resources
                             description = resource.description
@@ -256,7 +259,7 @@ class Registry:
                                     logger.debug(f"Failed to read resource for description: {e}")
 
                             self._resources[resource_key] = ResourceInfo(
-                                server_name=server_config.name,
+                                server_name=server_name,
                                 uri=str(resource.uri),
                                 name=resource.name,
                                 description=description,
@@ -264,10 +267,10 @@ class Registry:
                                 size=resource.size,
                             )
                     except Exception as e:
-                        logger.warning(f"Failed to list resources from '{server_config.name}': {e}")
+                        logger.warning(f"Failed to list resources from '{server_name}': {e}")
 
             except Exception as e:
-                logger.error(f"Failed to connect to server '{server_config.name}': {e}")
+                logger.error(f"Failed to connect to server '{server_name}': {e}")
 
         self._initialized = True
 

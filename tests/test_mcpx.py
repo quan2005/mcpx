@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 from fastmcp import Client
-from pydantic import ValidationError
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig, create_server, load_config
 from mcpx.registry import Registry, ToolInfo
@@ -40,10 +39,10 @@ def test_load_config_from_file():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(
             {
-                "mcp_servers": [
-                    {"name": "test", "command": "echo", "args": ["hello"]},
-                    {"name": "test2", "command": "cat", "args": []},
-                ]
+                "mcpServers": {
+                    "test": {"type": "stdio", "command": "echo", "args": ["hello"]},
+                    "test2": {"type": "stdio", "command": "cat", "args": []},
+                }
             },
             f,
         )
@@ -51,10 +50,10 @@ def test_load_config_from_file():
 
     try:
         config = load_config(config_path)
-        assert len(config.mcp_servers) == 2
-        assert config.mcp_servers[0].name == "test"
-        assert config.mcp_servers[0].command == "echo"
-        assert config.mcp_servers[0].args == ["hello"]
+        assert len(config.mcpServers) == 2
+        assert "test" in config.mcpServers
+        assert config.mcpServers["test"].command == "echo"
+        assert config.mcpServers["test"].args == ["hello"]
     finally:
         config_path.unlink()
 
@@ -79,9 +78,9 @@ def test_load_config_invalid_json():
 
 
 def test_load_config_invalid_structure():
-    """Test loading with invalid structure (mcp_servers not a list)."""
+    """Test loading with invalid structure (mcpServers not a dict)."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump({"mcp_servers": "not-a-list"}, f)
+        json.dump({"mcpServers": "not-a-dict"}, f)
         config_path = Path(f.name)
 
     try:
@@ -94,51 +93,52 @@ def test_load_config_invalid_structure():
 def test_proxy_config_validation():
     """Test ProxyConfig validation."""
     data = {
-        "mcp_servers": [
-            {"name": "test", "command": "echo", "args": ["hello"]},
-        ]
+        "mcpServers": {
+            "test": {"type": "stdio", "command": "echo", "args": ["hello"]},
+        }
     }
     config = ProxyConfig(**data)
-    assert len(config.mcp_servers) == 1
-    assert config.mcp_servers[0].name == "test"
+    assert len(config.mcpServers) == 1
+    assert "test" in config.mcpServers
 
 
 def test_proxy_config_empty_servers():
     """Test ProxyConfig with no servers."""
     config = ProxyConfig()
-    assert config.mcp_servers == []
+    assert config.mcpServers == {}
 
 
 def test_mcp_server_config_validation():
     """Test McpServerConfig validation."""
-    # Valid config
-    config = McpServerConfig(name="test", command="echo", args=["hello"])
-    assert config.name == "test"
+    # Valid config (name is no longer a field, it's the key in mcpServers)
+    config = McpServerConfig(type="stdio", command="echo", args=["hello"])
+    assert config.type == "stdio"
     assert config.args == ["hello"]
 
-    # Missing required field
-    with pytest.raises(ValidationError):
-        McpServerConfig(name="test")
+    # Missing required field for stdio type
+    config = McpServerConfig(type="stdio")
+    with pytest.raises(ValueError, match="stdio type requires 'command' field"):
+        config.validate_for_server("test")
 
 
 def test_mcp_server_config_with_env():
     """Test McpServerConfig with environment variables."""
     config = McpServerConfig(
-        name="test",
+        type="stdio",
         command="node",
         args=["server.js"],
         env={"API_KEY": "secret", "DEBUG": "true"},
     )
-    assert config.name == "test"
+    assert config.type == "stdio"
     assert config.env == {"API_KEY": "secret", "DEBUG": "true"}
 
 
 def test_create_server():
     """Test creating FastMCP server."""
     config = ProxyConfig(
-        mcp_servers=[
-            McpServerConfig(name="test", command="echo", args=["hello"]),
-        ]
+        mcpServers={
+            "test": McpServerConfig(type="stdio", command="echo", args=["hello"]),
+        }
     )
     mcp = create_server(config)
 
@@ -151,16 +151,16 @@ def test_create_server():
 def test_create_server_multiple_servers():
     """Test creating server with multiple MCP servers."""
     config = ProxyConfig(
-        mcp_servers=[
-            McpServerConfig(name="s1", command="cmd1", args=[]),
-            McpServerConfig(name="s2", command="cmd2", args=[]),
-            McpServerConfig(name="s3", command="cmd3", args=[]),
-        ]
+        mcpServers={
+            "s1": McpServerConfig(type="stdio", command="cmd1", args=[]),
+            "s2": McpServerConfig(type="stdio", command="cmd2", args=[]),
+            "s3": McpServerConfig(type="stdio", command="cmd3", args=[]),
+        }
     )
     mcp = create_server(config)
 
     assert mcp is not None
-    assert len(mcp._config.mcp_servers) == 3
+    assert len(mcp._config.mcpServers) == 3
 
 
 def _extract_text_content(result) -> str:

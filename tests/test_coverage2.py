@@ -16,14 +16,14 @@ class TestLoadConfigCoverage:
     def test_load_config_with_env_vars(self):
         """Test: Config with environment variables loads correctly."""
         config_data = {
-            "mcp_servers": [
-                {
-                    "name": "test",
+            "mcpServers": {
+                "test": {
+                    "type": "stdio",
                     "command": "node",
                     "args": ["server.js"],
                     "env": {"API_KEY": "secret", "DEBUG": "true"},
                 }
-            ]
+            }
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -34,22 +34,21 @@ class TestLoadConfigCoverage:
 
         try:
             config = load_config(config_path)
-            assert len(config.mcp_servers) == 1
-            assert config.mcp_servers[0].env == {"API_KEY": "secret", "DEBUG": "true"}
+            assert len(config.mcpServers) == 1
+            assert config.mcpServers["test"].env == {"API_KEY": "secret", "DEBUG": "true"}
         finally:
             config_path.unlink()
 
     def test_load_config_http_server(self):
         """Test: Config with HTTP server loads correctly."""
         config_data = {
-            "mcp_servers": [
-                {
-                    "name": "http-server",
+            "mcpServers": {
+                "http-server": {
                     "type": "http",
                     "url": "http://localhost:8080/mcp",
                     "headers": {"Authorization": "Bearer token"},
                 }
-            ]
+            }
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -60,19 +59,23 @@ class TestLoadConfigCoverage:
 
         try:
             config = load_config(config_path)
-            assert len(config.mcp_servers) == 1
-            assert config.mcp_servers[0].type == "http"
-            assert config.mcp_servers[0].url == "http://localhost:8080/mcp"
-            assert config.mcp_servers[0].headers == {"Authorization": "Bearer token"}
+            assert len(config.mcpServers) == 1
+            assert config.mcpServers["http-server"].type == "http"
+            assert config.mcpServers["http-server"].url == "http://localhost:8080/mcp"
+            assert config.mcpServers["http-server"].headers == {"Authorization": "Bearer token"}
         finally:
             config_path.unlink()
 
     def test_load_config_with_extra_fields(self):
         """Test: Config with extra fields ignores them."""
         config_data = {
-            "mcp_servers": [
-                {"name": "test", "command": "echo", "args": ["hello"]}
-            ],
+            "mcpServers": {
+                "test": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["hello"],
+                }
+            },
             "unknown_field": "ignored",
             "another_unknown": 123,
         }
@@ -85,7 +88,7 @@ class TestLoadConfigCoverage:
 
         try:
             config = load_config(config_path)
-            assert len(config.mcp_servers) == 1
+            assert len(config.mcpServers) == 1
             # Extra fields are ignored
             assert not hasattr(config, "unknown_field")
         finally:
@@ -95,7 +98,7 @@ class TestLoadConfigCoverage:
         """Test: ProxyConfig has correct default values."""
         config = ProxyConfig()
 
-        assert config.mcp_servers == []
+        assert config.mcpServers == {}
         assert config.health_check_enabled is True
         assert config.health_check_interval == 30
         assert config.health_check_timeout == 5
@@ -105,7 +108,7 @@ class TestLoadConfigCoverage:
     def test_proxy_config_custom_values(self):
         """Test: ProxyConfig accepts custom values."""
         config = ProxyConfig(
-            mcp_servers=[],
+            mcpServers={},
             health_check_enabled=False,
             health_check_interval=60,
             health_check_timeout=10,
@@ -131,13 +134,13 @@ class TestCreateServerCoverage:
         from mcpx.__main__ import create_server
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -161,13 +164,13 @@ class TestCreateServerCoverage:
         from mcpx.__main__ import create_server
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 ),
-            ]
+            }
         )
         mcp_server = create_server(config)
 
@@ -192,7 +195,7 @@ class TestCreateServerCoverage:
 
         from mcpx.__main__ import create_server
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
@@ -237,14 +240,13 @@ class TestServerConfigValidation:
     def test_server_config_with_optional_fields(self):
         """Test: ServerConfig with all optional fields."""
         config = McpServerConfig(
-            name="test",
             type="stdio",
             command="node",
             args=["server.js"],
             env={"NODE_ENV": "production"},
         )
 
-        assert config.name == "test"
+        assert config.type == "stdio"
         assert config.command == "node"
         assert config.args == ["server.js"]
         assert config.env == {"NODE_ENV": "production"}
@@ -263,13 +265,13 @@ class TestExecutorEdgeCases:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -299,13 +301,13 @@ class TestExecutorEdgeCases:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -341,13 +343,13 @@ class TestRegistryEdgeCases:
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
-            mcp_servers=[
-                McpServerConfig(
-                    name="filesystem",
+            mcpServers={
+                "filesystem": McpServerConfig(
+                    type="stdio",
                     command="npx",
                     args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
                 ),
-            ]
+            }
         )
 
         registry = Registry(config)
@@ -368,7 +370,7 @@ class TestRegistryEdgeCases:
         from mcpx.__main__ import ProxyConfig
         from mcpx.registry import Registry
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         registry = Registry(config)
         registry._initialized = True
 
@@ -381,7 +383,7 @@ class TestRegistryEdgeCases:
         from mcpx.__main__ import ProxyConfig
         from mcpx.registry import Registry
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         registry = Registry(config)
         registry._initialized = True
 
@@ -394,7 +396,7 @@ class TestRegistryEdgeCases:
         from mcpx.__main__ import ProxyConfig
         from mcpx.registry import Registry
 
-        config = ProxyConfig(mcp_servers=[])
+        config = ProxyConfig(mcpServers={})
         registry = Registry(config)
 
         # No health status for any server

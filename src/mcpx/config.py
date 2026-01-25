@@ -18,9 +18,11 @@ class McpServerConfig(BaseModel):
     Supports two transport types:
     - stdio: Uses command + args to spawn a subprocess
     - http: Uses url + optional headers for HTTP/SSE transport
+
+    Note: The server name is now the key in the mcpServers dictionary,
+    not a field inside this model (Claude Code compatibility).
     """
 
-    name: str
     type: str = "stdio"  # "stdio" or "http"
 
     # stdio transport fields
@@ -32,22 +34,28 @@ class McpServerConfig(BaseModel):
     url: str | None = None
     headers: dict[str, str] | None = None
 
-    def model_post_init(self, __context: object) -> None:
-        """Validate that required fields are present based on type."""
+    def validate_for_server(self, server_name: str) -> None:
+        """Validate that required fields are present based on type.
+
+        Args:
+            server_name: The server name (used for error messages).
+        """
         if self.type == "stdio":
             if not self.command:
-                raise ValueError(f"Server '{self.name}': stdio type requires 'command' field")
+                raise ValueError(f"Server '{server_name}': stdio type requires 'command' field")
         elif self.type == "http":
             if not self.url:
-                raise ValueError(f"Server '{self.name}': http type requires 'url' field")
+                raise ValueError(f"Server '{server_name}': http type requires 'url' field")
         else:
-            raise ValueError(f"Server '{self.name}': unknown type '{self.type}', must be 'stdio' or 'http'")
+            raise ValueError(f"Server '{server_name}': unknown type '{self.type}', must be 'stdio' or 'http'")
 
 
 class ProxyConfig(BaseModel):
     """Proxy configuration."""
 
-    mcp_servers: list[McpServerConfig] = Field(default_factory=list)
+    mcpServers: dict[str, McpServerConfig] = Field(  # noqa: N815
+        default_factory=dict
+    )
 
     # Health check configuration
     health_check_enabled: bool = True

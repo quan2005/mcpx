@@ -564,7 +564,7 @@ def main(port: int = 8000, host: str = "0.0.0.0") -> None:
 
     # Load configuration
     config = load_config(config_path)
-    logger.info(f"Loaded {len(config.mcp_servers)} server(s) from {config_path}")
+    logger.info(f"Loaded {len(config.mcpServers)} server(s) from {config_path}")
 
     from mcpx.registry import Registry
 
