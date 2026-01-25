@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 核心目标
 
-MCP 代理服务器，将多个 MCP 服务器聚合为 `inspect`、`exec` 和 `resources` 三个工具，AI 按需查询工具/资源、执行工具和读取资源，减少初始上下文。
+MCP 代理服务器，将多个 MCP 服务器聚合为 `describe`、`call` 和 `resources` 三个工具，AI 按需查询工具/资源、执行工具和读取资源，减少初始上下文。
 
 ## 常用命令
 
@@ -39,7 +39,7 @@ uv run mcpx-sse config.json
 
 ```
 src/mcpx/
-├── __main__.py    # 入口、inspect/exec/resources 工具定义
+├── __main__.py    # 入口、describe/call/resources 工具定义
 ├── config.py      # ProxyConfig、McpServerConfig 配置模型
 ├── registry.py    # Registry 类：连接管理、工具/资源缓存、健康检查
 ├── executor.py    # Executor 类：工具执行、TOON 压缩
@@ -54,8 +54,8 @@ src/mcpx/
 ### 设计模式
 
 MCPX 将多个 MCP 服务器的工具和资源收敛为三个入口点：
-- **inspect**: 查询工具列表和 Schema（按需获取详情）
-- **exec**: 执行工具（使用 client_factory 每次创建新会话）
+- **describe**: 查询工具列表和 Schema（按需获取详情），使用 method 参数（如 "server" 或 "server.tool"）
+- **call**: 执行工具（使用 method 参数，格式为 "server.tool"），使用 client_factory 每次创建新会话
 - **resources**: 列出或读取 MCP 服务器的资源（支持文本和二进制内容）
 
 ### 三大核心类
@@ -83,8 +83,8 @@ MCPX 将多个 MCP 服务器的工具和资源收敛为三个入口点：
 ### 数据流
 
 ```
-AI → inspect → Registry._tools (缓存) → 压缩的 Schema
-AI → exec → Executor → client_factory() → 临时会话 → MCP Server → TOON 压缩结果
+AI → describe(method="server.tool") → Registry._tools (缓存) → 压缩的 Schema
+AI → call(method="server.tool", arguments={...}) → Executor → client_factory() → 临时会话 → MCP Server → TOON 压缩结果
 AI → resources → Registry._resources (缓存) / read_resource() → 资源列表或内容
 ```
 
@@ -107,25 +107,30 @@ async with client:
 
 ## 关键实现细节
 
-### 1. inspect 描述动态生成
+### 1. describe/call method 参数格式
 
-FastMCP 工具描述必须在装饰器中指定，不能用 f-string docstring：
+使用 `method` 参数指定目标工具，格式为 `server.tool` 或仅 `server`：
 
 ```python
-@mcp.tool(description=full_desc)  # ✅ 正确
-async def inspect(...):
-    """..."""  # ❌ f-string 在这里无效
+# 查询服务器所有工具
+describe(method="filesystem")          # 列出 filesystem 服务器的所有工具
+
+# 查询特定工具的 schema
+describe(method="filesystem.read_file")  # 获取 read_file 工具的详细 schema
+
+# 执行工具
+call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
 ```
 
 ### 2. 双返回格式
 
-`inspect` 和 `exec` 都返回 `ToolResult`，包含：
+`describe` 和 `call` 都返回 `ToolResult`，包含：
 - `content`: TOON 压缩后的字符串（供 AI 阅读）
 - `structured_content`: 原始 JSON（供程序解析）
 
 ### 3. 多模态内容透传
 
-`exec` 返回类型支持多种内容：
+`call` 返回类型支持多种内容：
 - `ToolResult`: 普通数据（压缩 + 原始）
 - `TextContent | ImageContent | EmbeddedResource`: 单项多模态内容
 - `list[TextContent | ImageContent | EmbeddedResource]`: 多项多模态内容
@@ -141,7 +146,7 @@ async def inspect(...):
 
 ### 5. 参数校验
 
-`exec` 执行前校验：
+`call` 执行前校验：
 - 必填字段（`required`）
 - 未知参数（不在 `properties` 中）
 

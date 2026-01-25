@@ -58,7 +58,7 @@ class TestMCPXClientE2E:
     """E2E tests using FastMCP Client API."""
 
     async def test_client_list_tools_only_three(self):
-        """Test: Client sees only inspect, exec, and resources."""
+        """Test: Client sees only describe, call, and resources."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(name="test-server", command="echo", args=["hello"]),
@@ -70,10 +70,10 @@ class TestMCPXClientE2E:
             tools = await client.list_tools()
 
         tool_names = [tool.name for tool in tools]
-        assert tool_names == ["inspect", "exec", "resources"]
+        assert tool_names == ["describe", "call", "resources"]
 
-    async def test_inspect_list_server_tools(self):
-        """Test: inspect lists all available tools from a specific server."""
+    async def test_describe_list_server_tools(self):
+        """Test: describe lists all available tools from a specific server."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -87,7 +87,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "inspect", arguments={"server_name": "filesystem"}
+                "describe", arguments={"method": "filesystem"}
             )
 
         content = _extract_text_content(result)
@@ -103,8 +103,8 @@ class TestMCPXClientE2E:
             assert "input_schema" in tool
             assert tool["server_name"] == "filesystem"
 
-    async def test_inspect_get_specific_tool(self):
-        """Test: inspect returns full schema for a specific tool."""
+    async def test_describe_get_specific_tool(self):
+        """Test: describe returns full schema for a specific tool."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -119,7 +119,7 @@ class TestMCPXClientE2E:
         async with Client(mcp_server) as client:
             # First, list all tools to get a valid tool_name
             list_result = await client.call_tool(
-                "inspect", arguments={"server_name": "filesystem"}
+                "describe", arguments={"method": "filesystem"}
             )
             tools = _parse_response(_extract_text_content(list_result))
 
@@ -128,8 +128,8 @@ class TestMCPXClientE2E:
 
                 # Get detailed schema
                 result = await client.call_tool(
-                    "inspect",
-                    arguments={"server_name": "filesystem", "tool_name": tool_name},
+                    "describe",
+                    arguments={"method": f"filesystem.{tool_name}"},
                 )
 
                 content = _extract_text_content(result)
@@ -140,8 +140,8 @@ class TestMCPXClientE2E:
                 assert "description" in tool_info
                 assert "input_schema" in tool_info
 
-    async def test_inspect_tool_not_found(self):
-        """Test: inspect returns error for non-existent tool."""
+    async def test_describe_tool_not_found(self):
+        """Test: describe returns error for non-existent tool."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -155,8 +155,8 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "inspect",
-                arguments={"server_name": "filesystem", "tool_name": "nonexistent"},
+                "describe",
+                arguments={"method": "filesystem.nonexistent"},
             )
 
         content = _extract_text_content(result)
@@ -165,8 +165,8 @@ class TestMCPXClientE2E:
         assert "error" in error_info
         assert "not found" in error_info["error"].lower()
 
-    async def test_inspect_server_not_found(self):
-        """Test: inspect returns error for invalid server_name."""
+    async def test_describe_server_not_found(self):
+        """Test: describe returns error for invalid server."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -180,7 +180,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "inspect", arguments={"server_name": "nonexistent"}
+                "describe", arguments={"method": "nonexistent"}
             )
 
         content = _extract_text_content(result)
@@ -190,8 +190,8 @@ class TestMCPXClientE2E:
         assert "not found" in error_info["error"].lower()
         assert "available_servers" in error_info
 
-    async def test_exec_server_not_found(self):
-        """Test: exec returns error for non-existent server."""
+    async def test_call_server_not_found(self):
+        """Test: call returns error for non-existent server."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -205,23 +205,22 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "exec",
+                "call",
                 arguments={
-                    "server_name": "nonexistent",
-                    "tool_name": "some_tool",
+                    "method": "nonexistent.some_tool",
                     "arguments": {},
                 },
             )
 
         content = _extract_text_content(result)
-        exec_result = _parse_response(content)
+        call_result = _parse_response(content)
 
         # New format: error responses have "error" key, no "success" key
-        assert "error" in exec_result
-        assert "not found" in exec_result["error"].lower()
+        assert "error" in call_result
+        assert "not found" in call_result["error"].lower()
 
-    async def test_exec_tool_not_found(self):
-        """Test: exec returns error for non-existent tool."""
+    async def test_call_tool_not_found(self):
+        """Test: call returns error for non-existent tool."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -235,23 +234,22 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "exec",
+                "call",
                 arguments={
-                    "server_name": "filesystem",
-                    "tool_name": "nonexistent",
+                    "method": "filesystem.nonexistent",
                     "arguments": {},
                 },
             )
 
         content = _extract_text_content(result)
-        exec_result = _parse_response(content)
+        call_result = _parse_response(content)
 
         # New format: error responses have "error" key, no "success" key
-        assert "error" in exec_result
-        assert "not found" in exec_result["error"].lower()
+        assert "error" in call_result
+        assert "not found" in call_result["error"].lower()
 
-    async def test_exec_argument_validation_error(self):
-        """Test: exec returns accurate error when arguments don't match schema."""
+    async def test_call_argument_validation_error(self):
+        """Test: call returns accurate error when arguments don't match schema."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -266,7 +264,7 @@ class TestMCPXClientE2E:
         async with Client(mcp_server) as client:
             # First get a valid tool
             list_result = await client.call_tool(
-                "inspect", arguments={"server_name": "filesystem"}
+                "describe", arguments={"method": "filesystem"}
             )
             tools = _parse_response(_extract_text_content(list_result))
 
@@ -275,23 +273,22 @@ class TestMCPXClientE2E:
 
                 # Call with invalid arguments (should fail validation)
                 result = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": tool_name,
+                        "method": f"filesystem.{tool_name}",
                         "arguments": {"invalid_param": "value"},
                     },
                 )
 
                 content = _extract_text_content(result)
-                exec_result = _parse_response(content)
+                call_result = _parse_response(content)
 
                 # Should fail with validation error (new format: no "success" key)
-                assert "error" in exec_result
-                assert "validation" in exec_result["error"].lower()
+                assert "error" in call_result
+                assert "validation" in call_result["error"].lower()
 
-    async def test_exec_missing_required_argument(self):
-        """Test: exec returns error when required argument is missing."""
+    async def test_call_missing_required_argument(self):
+        """Test: call returns error when required argument is missing."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -306,20 +303,19 @@ class TestMCPXClientE2E:
         async with Client(mcp_server) as client:
             # read_file requires 'path' argument
             result = await client.call_tool(
-                "exec",
+                "call",
                 arguments={
-                    "server_name": "filesystem",
-                    "tool_name": "read_file",
+                    "method": "filesystem.read_file",
                     "arguments": {},  # Missing required 'path'
                 },
             )
 
             content = _extract_text_content(result)
-            exec_result = _parse_response(content)
+            call_result = _parse_response(content)
 
             # Should fail with validation error (new format: no "success" key)
-            assert "error" in exec_result
-            assert "required" in exec_result["error"].lower()
+            assert "error" in call_result
+            assert "required" in call_result["error"].lower()
 
     async def test_empty_config_server_not_found(self):
         """Test: Empty config results in server not found error."""
@@ -328,7 +324,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "inspect", arguments={"server_name": "any_server"}
+                "describe", arguments={"method": "any_server"}
             )
 
         content = _extract_text_content(result)
@@ -356,7 +352,7 @@ class TestMCPXClientE2E:
         async with Client(mcp_server) as client:
             # Query specific server
             result = await client.call_tool(
-                "inspect", arguments={"server_name": "filesystem"}
+                "describe", arguments={"method": "filesystem"}
             )
 
         content = _extract_text_content(result)
@@ -367,8 +363,8 @@ class TestMCPXClientE2E:
         for tool in tools:
             assert tool["server_name"] == "filesystem"
 
-    async def test_inspect_and_exec_integration(self):
-        """Test: Complete workflow of inspect then exec."""
+    async def test_describe_and_call_integration(self):
+        """Test: Complete workflow of describe then call."""
         config = ProxyConfig(
             mcp_servers=[
                 McpServerConfig(
@@ -383,7 +379,7 @@ class TestMCPXClientE2E:
         async with Client(mcp_server) as client:
             # Step 1: List tools from server
             list_result = await client.call_tool(
-                "inspect", arguments={"server_name": "filesystem"}
+                "describe", arguments={"method": "filesystem"}
             )
             tools = _parse_response(_extract_text_content(list_result))
 
@@ -392,8 +388,8 @@ class TestMCPXClientE2E:
             # Step 2: Get specific tool schema
             tool_name = tools[0]["name"]
             detail_result = await client.call_tool(
-                "inspect",
-                arguments={"server_name": "filesystem", "tool_name": tool_name},
+                "describe",
+                arguments={"method": f"filesystem.{tool_name}"},
             )
             tool_detail = _parse_response(_extract_text_content(detail_result))
 
@@ -415,10 +411,10 @@ class TestMCPXClientE2E:
         async with Client(mcp_server) as client1:
             async with Client(mcp_server) as client2:
                 result1 = await client1.call_tool(
-                    "inspect", arguments={"server_name": "filesystem"}
+                    "describe", arguments={"method": "filesystem"}
                 )
                 result2 = await client2.call_tool(
-                    "inspect", arguments={"server_name": "filesystem"}
+                    "describe", arguments={"method": "filesystem"}
                 )
 
         tools1 = _parse_response(_extract_text_content(result1))
@@ -502,7 +498,7 @@ class TestMCPXConfigFile:
 
             async with Client(mcp_server) as client:
                 result = await client.call_tool(
-                    "inspect", arguments={"server_name": "fs"}
+                    "describe", arguments={"method": "fs"}
                 )
 
             tools = _parse_response(_extract_text_content(result))
@@ -564,7 +560,7 @@ class TestMCPXErrorHandling:
         # Server should start and valid server tools should be available
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "inspect", arguments={"server_name": "valid-server"}
+                "describe", arguments={"method": "valid-server"}
             )
 
         tools = _parse_response(_extract_text_content(result))
@@ -573,7 +569,7 @@ class TestMCPXErrorHandling:
         assert isinstance(tools, list)
         assert len(tools) > 0
 
-    async def test_exec_returns_original_error_on_failure(self):
+    async def test_call_returns_original_error_on_failure(self):
         """Test: Tool execution returns original error message."""
         config = ProxyConfig(
             mcp_servers=[
@@ -589,19 +585,18 @@ class TestMCPXErrorHandling:
         async with Client(mcp_server) as client:
             # Try to execute with invalid path (file doesn't exist)
             result = await client.call_tool(
-                "exec",
+                "call",
                 arguments={
-                    "server_name": "filesystem",
-                    "tool_name": "read_file",
+                    "method": "filesystem.read_file",
                     "arguments": {"path": "/nonexistent/file/xyz/123"},
                 },
             )
 
         content = _extract_text_content(result)
-        exec_result = _parse_response(content)
+        call_result = _parse_response(content)
 
         # New format: error responses have "error" key (no "success" key)
-        assert "error" in exec_result
+        assert "error" in call_result
 
 
 class TestMCPXRealProcess:
@@ -642,8 +637,8 @@ class TestMCPXRealProcess:
 class TestMCPXExecSuccess:
     """Tests for successful tool execution."""
 
-    async def test_exec_uses_injected_registry(self):
-        """Test: exec uses the injected registry session."""
+    async def test_call_uses_injected_registry(self):
+        """Test: call uses the injected registry session."""
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
@@ -666,10 +661,9 @@ class TestMCPXExecSuccess:
 
             async with Client(mcp_server) as client:
                 result = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file)},
                     },
                 )
@@ -690,8 +684,8 @@ class TestMCPXExecSuccess:
             test_file.unlink(missing_ok=True)
             await registry.close()
 
-    async def test_exec_reconnects_disconnected_session(self):
-        """Test: exec reconnects when the session is disconnected."""
+    async def test_call_reconnects_disconnected_session(self):
+        """Test: call reconnects when the session is disconnected."""
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
@@ -722,20 +716,19 @@ class TestMCPXExecSuccess:
             async with Client(mcp_server) as client:
                 # This should fail since factory was removed
                 result = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file)},
                     },
                 )
 
             content = _extract_text_content(result)
-            exec_result = _parse_response(content)
+            call_result = _parse_response(content)
 
             # Should fail since we removed factory
-            assert "error" in exec_result
-            assert "not found" in exec_result["error"].lower()
+            assert "error" in call_result
+            assert "not found" in call_result["error"].lower()
         finally:
             test_file.unlink(missing_ok=True)
             await registry.close()
@@ -773,8 +766,8 @@ class TestMCPXExecSuccess:
 
         await registry.close()
 
-    async def test_exec_successful_tool_execution(self):
-        """Test: exec successfully executes a tool and returns result."""
+    async def test_call_successful_tool_execution(self):
+        """Test: call successfully executes a tool and returns result."""
         # Use /private/tmp on macOS (real path, not symlink)
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
@@ -796,10 +789,9 @@ class TestMCPXExecSuccess:
         try:
             async with Client(mcp_server) as client:
                 result = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file)},
                     },
                 )
@@ -818,8 +810,8 @@ class TestMCPXExecSuccess:
         finally:
             test_file.unlink(missing_ok=True)
 
-    async def test_exec_with_empty_arguments(self):
-        """Test: exec works with tools that don't require arguments."""
+    async def test_call_with_empty_arguments(self):
+        """Test: call works with tools that don't require arguments."""
         # Use /private/tmp on macOS (real path, not symlink)
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
@@ -837,10 +829,9 @@ class TestMCPXExecSuccess:
         async with Client(mcp_server) as client:
             # list_allowed_directories doesn't require arguments
             result = await client.call_tool(
-                "exec",
+                "call",
                 arguments={
-                    "server_name": "filesystem",
-                    "tool_name": "list_allowed_directories",
+                    "method": "filesystem.list_allowed_directories",
                 },
             )
 
@@ -989,8 +980,8 @@ class TestMCPXHttpLifespan:
         # After exiting context, close should have been called
         assert closed
 
-    async def test_exec_with_same_event_loop_init(self):
-        """Test: exec works correctly when registry is initialized in the same event loop."""
+    async def test_call_with_same_event_loop_init(self):
+        """Test: call works correctly when registry is initialized in the same event loop."""
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
@@ -1018,10 +1009,9 @@ class TestMCPXHttpLifespan:
             # Use FastMCP Client - this runs in the same event loop
             async with Client(mcp_server) as client:
                 result = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file)},
                     },
                 )
@@ -1036,8 +1026,8 @@ class TestMCPXHttpLifespan:
             test_file.unlink(missing_ok=True)
             await registry.close()
 
-    async def test_multiple_exec_calls_reuse_session(self):
-        """Test: Multiple exec calls reuse the same session."""
+    async def test_multiple_call_calls_reuse_session(self):
+        """Test: Multiple call calls reuse the same session."""
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
@@ -1066,10 +1056,9 @@ class TestMCPXHttpLifespan:
             async with Client(mcp_server) as client:
                 # First call
                 result1 = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file1)},
                     },
                 )
@@ -1079,20 +1068,19 @@ class TestMCPXHttpLifespan:
 
                 # Second call - should reuse same session
                 result2 = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file2)},
                     },
                 )
                 content2 = _extract_text_content(result2)
                 assert "File 2 content" in content2
 
-                # Third call - inspect should also work
+                # Third call - describe should also work
                 result3 = await client.call_tool(
-                    "inspect",
-                    arguments={"server_name": "filesystem"},
+                    "describe",
+                    arguments={"method": "filesystem"},
                 )
                 tools = _parse_response(_extract_text_content(result3))
                 assert isinstance(tools, list)
@@ -1111,7 +1099,7 @@ class TestProxyProviderRefactorVerification:
     - V-1: Registry uses _client_factories, not _sessions
     - V-2: Executor uses client_factory pattern
     - V-3: Auto-recovery via session isolation
-    - V-4: Interface compatibility (inspect/exec/resources unchanged)
+    - V-4: Interface compatibility (describe/call/resources unchanged)
     """
 
     @pytest.mark.asyncio
@@ -1200,10 +1188,9 @@ class TestProxyProviderRefactorVerification:
             async with Client(mcp_server) as client:
                 # First request
                 result1 = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file)},
                     },
                 )
@@ -1212,10 +1199,9 @@ class TestProxyProviderRefactorVerification:
 
                 # Second request - should automatically work (fresh session)
                 result2 = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file)},
                     },
                 )
@@ -1226,8 +1212,8 @@ class TestProxyProviderRefactorVerification:
             await registry.close()
 
     @pytest.mark.asyncio
-    async def test_v4_interface_compatibility_inspect(self):
-        """V-4: inspect interface should be unchanged."""
+    async def test_v4_interface_compatibility_describe(self):
+        """V-4: describe interface should be unchanged."""
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
@@ -1247,10 +1233,10 @@ class TestProxyProviderRefactorVerification:
             mcp_server = create_server(config, registry=registry)
 
             async with Client(mcp_server) as client:
-                # inspect with server_name
+                # describe with method
                 result = await client.call_tool(
-                    "inspect",
-                    arguments={"server_name": "filesystem"},
+                    "describe",
+                    arguments={"method": "filesystem"},
                 )
 
                 # Should have content
@@ -1266,8 +1252,8 @@ class TestProxyProviderRefactorVerification:
             await registry.close()
 
     @pytest.mark.asyncio
-    async def test_v4_interface_compatibility_exec(self):
-        """V-4: exec interface should be unchanged."""
+    async def test_v4_interface_compatibility_call(self):
+        """V-4: call interface should be unchanged."""
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
@@ -1283,18 +1269,17 @@ class TestProxyProviderRefactorVerification:
         registry = Registry(config)
         await registry.initialize()
 
-        test_file = Path(tmp_dir) / "v4_exec_test.txt"
-        test_file.write_text("V4 exec test")
+        test_file = Path(tmp_dir) / "v4_call_test.txt"
+        test_file.write_text("V4 call test")
 
         try:
             mcp_server = create_server(config, registry=registry)
 
             async with Client(mcp_server) as client:
                 result = await client.call_tool(
-                    "exec",
+                    "call",
                     arguments={
-                        "server_name": "filesystem",
-                        "tool_name": "read_file",
+                        "method": "filesystem.read_file",
                         "arguments": {"path": str(test_file)},
                     },
                 )
@@ -1302,7 +1287,7 @@ class TestProxyProviderRefactorVerification:
                 # Should have content
                 assert hasattr(result, "content")
                 content = _extract_text_content(result)
-                assert "V4 exec test" in content
+                assert "V4 call test" in content
         finally:
             test_file.unlink(missing_ok=True)
             await registry.close()

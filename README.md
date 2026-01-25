@@ -1,6 +1,6 @@
 # MCPX
 
-> 把 100 个 MCP 工具变成 2 个 —— 让 AI 专注于真正重要的事情
+> 把 100 个 MCP 工具变成 3 个 —— 让 AI 专注于真正重要的事情
 
 ---
 
@@ -23,8 +23,8 @@ MCPX 只暴露三个工具：
 
 | 工具 | 用途 |
 |------|------|
-| `inspect` | 查询可用工具及其 Schema |
-| `exec` | 执行任意 MCP 工具 |
+| `describe` | 查询可用工具及其 Schema |
+| `call` | 执行任意 MCP 工具 |
 | `resources` | 列出或读取 MCP 服务器资源 |
 
 AI 收到的是一份简洁的"工具目录"，按需查询详情。
@@ -67,11 +67,11 @@ uv run mcpx config.json
 
 ```python
 # 查询工具
-inspect(server_name="filesystem")
-inspect(server_name="filesystem", tool_name="read_file")
+describe(method="filesystem")           # 列出服务器所有工具
+describe(method="filesystem.read_file") # 获取工具详情
 
 # 执行工具
-exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/file.txt"})
+call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
 
 # 读取资源
 resources(server_name="filesystem", uri="file:///tmp/file.txt")
@@ -83,7 +83,7 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 
 | 特性 | 说明 |
 |------|------|
-| **按需加载** | 仅暴露 `inspect`、`exec`、`resources` 三个工具，AI 按需查询详情 |
+| **按需加载** | 仅暴露 `describe`、`call`、`resources` 三个工具，AI 按需查询详情 |
 | **双传输** | stdio（Claude Desktop）+ HTTP/SSE |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
@@ -145,7 +145,7 @@ uv run mypy src/mcpx
 ## 架构
 
 ```
-AI → inspect (查询) / exec (执行)
+AI → describe (查询) / call (执行)
           ↓
     MCPX Proxy
           ↓

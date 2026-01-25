@@ -56,45 +56,39 @@ __all__ = [
 def generate_tools_description(registry: "Registry") -> str:
     """Generate a compact description of all available tools.
 
+    Format: server.tool(param, param?): description
+
     Args:
         registry: Initialized registry with cached tools
 
     Returns:
-        Formatted string with all tools grouped by server
+        Formatted string with all tools in compact format
     """
     tools_desc_lines = ["Available tools:"]
-    for server_name in sorted(registry.list_servers()):
-        # Get server info for description
-        server_info = registry.get_server_info(server_name)
-        if server_info and server_info.instructions:
-            # Use instructions as server description
-            server_desc = server_info.instructions
-            if len(server_desc) > 300:
-                server_desc = server_desc[:297] + "..."
-            tools_desc_lines.append(f"  Server: {server_name} - {server_desc}")
-        else:
-            tools_desc_lines.append(f"  Server: {server_name}")
 
+    for server_name in sorted(registry.list_servers()):
         for tool in registry.list_tools(server_name):
             # Extract parameter list from input_schema
             params = []
             properties = tool.input_schema.get("properties", {})
             required = set(tool.input_schema.get("required", []))
-            for param_name in properties.keys():
+            for param_name in sorted(properties.keys()):
                 # Required params shown as-is, optional with ?
                 params.append(param_name if param_name in required else f"{param_name}?")
             params_str = ", ".join(params) if params else ""
 
-            # Truncate description if too long
+            # Truncate description if too long (60 chars)
             desc = tool.description
-            if len(desc) > 80:
-                desc = desc[:77] + "..."
+            if len(desc) > 60:
+                desc = desc[:57] + "..."
 
-            # Add params after tool name
+            # Format: server.tool(params): desc
+            full_name = f"{server_name}.{tool.name}"
             if params_str:
-                tools_desc_lines.append(f"    - {tool.name}({params_str}): {desc}")
+                tools_desc_lines.append(f"  - {full_name}({params_str}): {desc}")
             else:
-                tools_desc_lines.append(f"    - {tool.name}: {desc}")
+                tools_desc_lines.append(f"  - {full_name}: {desc}")
+
     return "\n".join(tools_desc_lines)
 
 
@@ -113,12 +107,29 @@ def generate_resources_description(registry: "Registry") -> str:
         if not resources:
             continue
 
-        resources_desc_lines.append(f"  Server: {server_name}")
+        # Get server info for description
+        server_info = registry.get_server_info(server_name)
+        if server_info and server_info.instructions:
+            server_desc = server_info.instructions
+            if len(server_desc) > 300:
+                server_desc = server_desc[:297] + "..."
+            resources_desc_lines.append(f"  Server: {server_name} - {server_desc}")
+        else:
+            resources_desc_lines.append(f"  Server: {server_name}")
+
         for resource in resources:
             # Build resource info line
             mime_info = f" [{resource.mime_type}]" if resource.mime_type else ""
             size_info = f" ({resource.size} bytes)" if resource.size is not None else ""
-            desc = f": {resource.description}" if resource.description else ""
+
+            # Truncate description if too long (consistent with tools)
+            desc = ""
+            if resource.description:
+                desc_text = resource.description
+                if len(desc_text) > 80:
+                    desc_text = desc_text[:77] + "..."
+                desc = f": {desc_text}"
+
             resources_desc_lines.append(
                 f"    - {resource.name} ({resource.uri}){mime_info}{size_info}{desc}"
             )
@@ -165,8 +176,8 @@ def create_server(
     """Create MCP server from configuration.
 
     The server exposes three tools:
-    - inspect: Get full schema of cached tools (with TOON compression support)
-    - exec: Execute tools through long-lived connections (with TOON compression support)
+    - describe: Get full schema of cached tools (with TOON compression support)
+    - call: Execute tools through long-lived connections (with TOON compression support)
     - resources: List or read resources from MCP servers
 
     Args:
@@ -208,23 +219,23 @@ def create_server(
             return json_schema_to_typescript(input_schema, max_description_len=300)
         return input_schema
 
-    # Build the inspect description
-    base_desc = "Inspect available MCP tools and their schemas.\n\n"
+    # Build the describe description
+    base_desc = "Query tool information from MCP servers.\n\n"
     if tools_description:
         full_desc = base_desc + tools_description
     else:
         full_desc = base_desc + "Tools will be listed after initialization."
 
     @mcp.tool(description=full_desc)
-    async def inspect(
-        server_name: str,
-        tool_name: str | None = None,
+    async def describe(
+        method: str,
     ) -> ToolResult | str:
         """Query tool information from MCP servers.
 
         Args:
-            server_name: Server name (required). Lists all tools from this server.
-            tool_name: Specific tool name (optional). If provided, returns detailed schema for this tool.
+            method: Method identifier in "server" or "server.tool" format
+                - "server": List all tools from this server
+                - "server.tool": Get detailed schema for this tool
 
         Returns:
             ToolResult with:
@@ -233,10 +244,10 @@ def create_server(
 
         Examples:
             # List all tools from a server
-            inspect(server_name="filesystem")
+            describe(method="filesystem")
 
             # Get details for a specific tool
-            inspect(server_name="filesystem", tool_name="read_file")
+            describe(method="filesystem.read_file")
         """
         registry: Registry = mcp._registry  # type: ignore[attr-defined]
         executor: Executor = mcp._executor  # type: ignore[attr-defined]
@@ -260,6 +271,11 @@ def create_server(
             if config.include_structured_content:
                 return ToolResult(content=data, structured_content={"result": data})
             return ToolResult(content=data)
+
+        # Parse method string
+        parts = method.split(".", 1)
+        server_name = parts[0]
+        tool_name = parts[1] if len(parts) > 1 else None
 
         # Check if server exists
         if not registry.has_server(server_name):
@@ -341,26 +357,32 @@ def create_server(
         return None
 
     @mcp.tool
-    async def exec(
-        server_name: str,
-        tool_name: str,
+    async def call(
+        method: str,
         arguments: dict[str, object] | None = None,
     ) -> ToolResult | str | TextContent | ImageContent | EmbeddedResource | list[TextContent | ImageContent | EmbeddedResource]:
         """Execute an MCP tool.
 
         Args:
-            server_name: Server name (required)
-            tool_name: Tool name (required)
-            arguments: Tool arguments (use inspect to get schema)
+            method: Method identifier in "server.tool" format
+            arguments: Tool arguments (use describe to get schema)
 
         Example:
-            exec(server_name="filesystem", tool_name="read_file", arguments={"path": "/tmp/file.txt"})
+            call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
         """
         executor: Executor = mcp._executor  # type: ignore[attr-defined]
 
         # Ensure registry is initialized
         registry: Registry = mcp._registry  # type: ignore[attr-defined]
         await registry.ensure_initialized()
+
+        # Parse method string
+        parts = method.split(".", 1)
+        if len(parts) != 2:
+            error_data = {"error": f"Invalid method format: '{method}'. Expected 'server.tool'"}
+            return json.dumps(error_data, ensure_ascii=False)
+
+        server_name, tool_name = parts
 
         # Check if server exists
         if not registry.has_server(server_name):
