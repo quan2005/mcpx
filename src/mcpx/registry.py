@@ -138,6 +138,45 @@ class Registry:
         # Set callback for health checker to get sessions
         self._health_checker.set_session_callback(self._get_session_for_health_check)
 
+    def _create_client_factory(
+        self, server_config: McpServerConfig
+    ) -> Callable[[], McpClient]:
+        """Create a client factory for a server.
+
+        The factory returns a new client instance on each call.
+        This enables session isolation - each request gets a fresh connection.
+
+        Args:
+            server_config: Server configuration
+
+        Returns:
+            A callable that returns a new Client instance
+        """
+        from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+
+        # Create transport based on type
+        if server_config.type == "http":
+            transport: StdioTransport | StreamableHttpTransport = StreamableHttpTransport(
+                url=server_config.url,  # type: ignore[arg-type]
+                headers=server_config.headers or {},
+            )
+        else:
+            # Default to stdio
+            transport = StdioTransport(
+                command=server_config.command,  # type: ignore[arg-type]
+                args=server_config.args,
+                env=server_config.env or {},
+            )
+
+        # Create base client (disconnected)
+        base_client: McpClient = Client(transport, auto_initialize=True)
+
+        # Factory function: returns new client each time
+        def factory() -> McpClient:
+            return base_client.new()
+
+        return factory
+
     async def ensure_initialized(self) -> None:
         """Ensure registry is initialized (lazy initialization)."""
         if not self._initialized:
