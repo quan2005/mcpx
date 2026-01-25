@@ -95,13 +95,12 @@ class TestMCPXClientE2E:
 
         assert isinstance(tools, list)
         assert len(tools) > 0
-        # Each tool should have server_name, name, description, input_schema
+        # Each tool should have method, description, input_schema
         for tool in tools:
-            assert "server_name" in tool
-            assert "name" in tool
+            assert "method" in tool
             assert "description" in tool
             assert "input_schema" in tool
-            assert tool["server_name"] == "filesystem"
+            assert tool["method"].startswith("filesystem.")
 
     async def test_describe_get_specific_tool(self):
         """Test: describe returns full schema for a specific tool."""
@@ -124,7 +123,7 @@ class TestMCPXClientE2E:
             tools = _parse_response(_extract_text_content(list_result))
 
             if tools:
-                tool_name = tools[0]["name"]
+                tool_name = tools[0]["method"].split(".", 1)[1]
 
                 # Get detailed schema
                 result = await client.call_tool(
@@ -135,8 +134,7 @@ class TestMCPXClientE2E:
                 content = _extract_text_content(result)
                 tool_info = _parse_response(content)
 
-                assert tool_info["server_name"] == "filesystem"
-                assert "name" in tool_info
+                assert tool_info["method"] == f"filesystem.{tool_name}"
                 assert "description" in tool_info
                 assert "input_schema" in tool_info
 
@@ -269,7 +267,7 @@ class TestMCPXClientE2E:
             tools = _parse_response(_extract_text_content(list_result))
 
             if tools:
-                tool_name = tools[0]["name"]
+                tool_name = tools[0]["method"].split(".", 1)[1]
 
                 # Call with invalid arguments (should fail validation)
                 result = await client.call_tool(
@@ -361,7 +359,7 @@ class TestMCPXClientE2E:
         assert isinstance(tools, list)
         assert len(tools) > 0
         for tool in tools:
-            assert tool["server_name"] == "filesystem"
+            assert tool["method"].startswith("filesystem.")
 
     async def test_describe_and_call_integration(self):
         """Test: Complete workflow of describe then call."""
@@ -386,7 +384,7 @@ class TestMCPXClientE2E:
             assert len(tools) > 0
 
             # Step 2: Get specific tool schema
-            tool_name = tools[0]["name"]
+            tool_name = tools[0]["method"].split(".", 1)[1]
             detail_result = await client.call_tool(
                 "describe",
                 arguments={"method": f"filesystem.{tool_name}"},
@@ -1247,7 +1245,7 @@ class TestProxyProviderRefactorVerification:
                 # Should return list of tools
                 assert isinstance(tools, list)
                 assert len(tools) > 0
-                assert all("name" in t for t in tools)
+                assert all("method" in t for t in tools)
         finally:
             await registry.close()
 
