@@ -16,7 +16,7 @@ class TestExecutorCoverage:
 
     @pytest.mark.asyncio
     async def test_executor_session_not_connected(self):
-        """Test: Executor handles no active session gracefully."""
+        """Test: Executor handles no client factory gracefully."""
         from mcpx.registry import Registry
 
         config = ProxyConfig(mcp_servers=[])
@@ -27,7 +27,7 @@ class TestExecutorCoverage:
 
         result = await executor.execute("nonexistent", "some_tool", {})
         assert not result.success
-        assert "No active connection" in result.error
+        assert "No client factory" in result.error
 
     @pytest.mark.asyncio
     async def test_executor_reconnect_success(self):
