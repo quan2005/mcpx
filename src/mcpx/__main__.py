@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
@@ -555,12 +556,22 @@ def main(port: int = 8000, host: str = "0.0.0.0") -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     _setup_fastmcp_logging()
 
-    # Default config path
-    config_path = Path(__file__).parent.parent.parent / "config.json"
+    # Parse command line args first
+    parser = argparse.ArgumentParser(
+        prog="mcpx-toolkit",
+        description="MCPX - MCP proxy server with progressive tool loading",
+    )
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
+    parser.add_argument("config", nargs="?", default=None, help="Path to config.json file")
 
-    # Allow override via command line
-    if len(sys.argv) > 1:
-        config_path = Path(sys.argv[1])
+    args = parser.parse_args()
+
+    # Default config path
+    if args.config:
+        config_path = Path(args.config)
+    else:
+        config_path = Path(__file__).parent.parent.parent / "config.json"
 
     # Load configuration
     config = load_config(config_path)
@@ -656,15 +667,13 @@ def main(port: int = 8000, host: str = "0.0.0.0") -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="MCPX - MCP proxy server")
+    parser = argparse.ArgumentParser(
+        prog="mcpx-toolkit",
+        description="MCPX - MCP proxy server with progressive tool loading",
+    )
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
     parser.add_argument("config", nargs="?", default=None, help="Path to config.json file")
 
     args = parser.parse_args()
-
-    # Override config path if provided
-    if args.config:
-        sys.argv = [sys.argv[0], args.config]
-
     main(port=args.port, host=args.host)

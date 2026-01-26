@@ -20,7 +20,6 @@ dev = [
 
 [project.scripts]
 mcpx-toolkit = "mcpx.__main__:main"
-mcpx-toolkit-sse = "mcpx.__main__:main_http"
 
 [build-system]
 requires = ["hatchling"]

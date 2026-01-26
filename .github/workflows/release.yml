@@ -65,8 +65,7 @@ jobs:
       - name: Verify package
         run: |
           uv pip install --reinstall-package mcpx dist/*.whl
-          mcpx-toolkit --help || true
-          mcpx-toolkit-sse --help || true
+          mcpx-toolkit --help
 
   publish-test:
     name: Publish to TestPyPI
