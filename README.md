@@ -150,22 +150,18 @@ cp ~/.claude.json ~/.claude.json.backup
 ### 查询工具
 
 ```python
-# 列出所有服务器的工具
-describe()
-
-# 列出指定服务器的工具
-describe(server_name="filesystem")
+# 列出指定服务器的所有工具
+describe(method="filesystem")
 
 # 查看工具的详细 Schema
-describe(server_name="filesystem", tool_name="read_file")
+describe(method="filesystem.read_file")
 ```
 
 ### 执行工具
 
 ```python
 call(
-    server_name="filesystem",
-    tool_name="read_file",
+    method="filesystem.read_file",
     arguments={"path": "/tmp/file.txt"}
 )
 ```
@@ -190,25 +186,23 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 
 ```json
 {
-  "mcp_servers": [
-    {
-      "name": "filesystem",
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-      "type": "stdio"
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
     },
-    {
-      "name": "http-server",
-      "url": "http://localhost:3000/mcp",
+    "http-server": {
       "type": "http",
+      "url": "http://localhost:3000/mcp",
       "headers": {
         "Authorization": "Bearer xxx"
       }
     }
-  ],
+  },
   "schema_compression_enabled": true,
   "toon_compression_enabled": true,
-  "toon_compression_min_size": 3,
+  "toon_compression_min_size": 1,
   "health_check_enabled": true,
   "health_check_interval": 30
 }
@@ -218,7 +212,7 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 |-------|------|--------|
 | `schema_compression_enabled` | Schema 压缩为 TypeScript 类型 | `true` |
 | `toon_compression_enabled` | TOON 压缩响应数据 | `true` |
-| `toon_compression_min_size` | TOON 压缩最小阈值（KB） | `3` |
+| `toon_compression_min_size` | TOON 压缩最小阈值（数组长度/对象键数） | `1` |
 | `health_check_enabled` | 启用健康检查 | `true` |
 | `health_check_interval` | 健康检查间隔（秒） | `30` |
 
