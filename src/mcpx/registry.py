@@ -7,7 +7,12 @@ from collections.abc import Callable
 from typing import Any
 
 from fastmcp import Client
-from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+from fastmcp.client.transports import (
+    SSETransport,
+    StdioTransport,
+    StreamableHttpTransport,
+)
+from fastmcp.mcp_config import infer_transport_type_from_url
 from pydantic import BaseModel
 
 from mcpx.config import McpServerConfig, ProxyConfig
@@ -152,14 +157,30 @@ class Registry:
         Returns:
             A callable that returns a new Client instance
         """
-        from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+        from fastmcp.client.transports import (
+            SSETransport,
+            StdioTransport,
+            StreamableHttpTransport,
+        )
 
         # Create transport based on type
         if server_config.type == "http":
-            transport: StdioTransport | StreamableHttpTransport = StreamableHttpTransport(
-                url=server_config.url,  # type: ignore[arg-type]
-                headers=server_config.headers or {},
+            # Auto-detect transport type (SSE or Streamable HTTP) from URL
+            # url is validated to be non-None in validate_for_server
+            transport_type = infer_transport_type_from_url(
+                server_config.url  # type: ignore[arg-type]
             )
+
+            if transport_type == "sse":
+                transport: StdioTransport | StreamableHttpTransport | SSETransport = SSETransport(
+                    url=server_config.url,  # type: ignore[arg-type]
+                    headers=server_config.headers or {},
+                )
+            else:
+                transport = StreamableHttpTransport(
+                    url=server_config.url,  # type: ignore[arg-type]
+                    headers=server_config.headers or {},
+                )
         else:
             # Default to stdio
             transport = StdioTransport(

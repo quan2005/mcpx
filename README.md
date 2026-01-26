@@ -198,6 +198,10 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
       "headers": {
         "Authorization": "Bearer xxx"
       }
+    },
+    "sse-server": {
+      "type": "http",
+      "url": "https://example.com/sse"
     }
   },
   "schema_compression_enabled": true,
@@ -207,6 +211,8 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
   "health_check_interval": 30
 }
 ```
+
+**注意**：HTTP 类型会自动检测传输方式——URL 包含 `/sse` 使用 SSE 传输，否则使用 Streamable HTTP。
 
 | 配置项 | 说明 | 默认值 |
 |-------|------|--------|
@@ -223,7 +229,7 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 | 特性 | 说明 |
 |------|------|
 | **按需加载** | 仅暴露 `describe`、`call`、`resources` 三个工具 |
-| **双传输** | HTTP/SSE（默认）/ 可扩展 stdio |
+| **多传输** | stdio / Streamable HTTP / SSE（自动检测） |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
 | **会话隔离** | 每次请求创建新会话，避免状态污染 |
@@ -273,6 +279,27 @@ uv run ruff check src/mcpx tests/
 # 类型检查
 uv run mypy src/mcpx
 ```
+
+## AI 开发流程
+
+本项目使用 **skills** 规范 AI Agent 的开发流程。这些 skills 是项目的一部分，位于 `.claude/skills/` 目录：
+
+```bash
+.claude/skills/
+├── mcpx-getting-started/    # 入口，加载其他 skills
+├── mcpx-tdd-workflow/       # TDD 开发（RED-GREEN-REFACTOR）
+├── mcpx-code-quality/       # 代码质量检查（lint/types/test）
+├── mcpx-documentation/      # 文档更新规范
+└── mcpx-release/            # 版本发布流程
+```
+
+### 使用方式
+
+这些是**项目专属 skills**，克隆项目后即可使用。开始开发前，告诉 AI：
+
+> 加载 mcpx-getting-started skill
+
+AI 会自动加载并遵循项目的开发流程规范。
 
 ---
 
