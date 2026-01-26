@@ -37,48 +37,185 @@ AI 收到的是一份简洁的"工具目录"，按需查询详情。
 
 ---
 
-## 快速开始
+## 安装
 
-```bash
-# 安装
-uv sync
+### 给人类用户
 
-# 配置 config.json
-# 运行（HTTP/SSE 模式）
-uv run mcpx config.json
+将以下提示复制给你的 LLM Agent（Claude Code、Cursor、Windsurf 等）：
 
-# 指定端口和主机
-uv run mcpx --port 3000 --host 127.0.0.1 config.json
+```
+帮我安装和配置 mcpx-toolkit，让所有 MCP 工具通过 mcpx-toolkit 统一管理。
+
+注意：我的 claude_desktop_config.json 文件很大，请用 jq 命令精准提取 mcpServers 配置，
+不要读取整个文件。具体步骤请参考：
+https://raw.githubusercontent.com/quan2005/mcpx/main/README.md
 ```
 
-**config.json**（Claude Code 兼容格式）
+### 给 LLM Agent
+
+> ⚠️ **重要提示**：`~/.claude.json` 或 `claude_desktop_config.json` 文件可能非常大（数千行）。
+> **务必使用 `jq` 命令精准提取 `mcpServers` 配置**，不要直接读取整个文件。
+
+安装 `mcpx-toolkit`：
+
+```bash
+# 使用 uv 安装（推荐）
+uv tool install mcpx-toolkit
+
+# 或使用 pip
+pip install mcpx-toolkit
+```
+
+---
+
+## LLM 配置指南
+
+> 将此指南发给 LLM Agent，让它帮你完成配置
+
+### 第一步：提取现有 MCP 配置
+
+> ⚠️ **Claude 配置文件可能非常大**，包含大量历史对话和其他设置。
+> **请务必使用 `jq` 精准提取 `mcpServers` 字段**，避免读取整个文件导致上下文溢出。
+
+查找配置文件位置：
+
+| 系统 | 路径 |
+|------|------|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+使用 `jq` 精准提取 `mcpServers`：
+
+```bash
+# macOS/Linux - 只提取 mcpServers 字段
+jq '.mcpServers' ~/Library/Application\ Support/Claude/claude_desktop_config.json > ~/mcpx_config.json
+
+# Windows (PowerShell)
+Get-Content "$env:APPDATA\Claude\claude_desktop_config.json" | \
+  ConvertFrom-Json | Select-Object -ExpandProperty mcpServers | \
+  ConvertTo-Json -Depth 10 | Out-File ~/mcpx_config.json
+```
+
+验证提取结果（应该只包含 MCP 服务器配置）：
+
+```bash
+cat ~/mcpx_config.json | jq 'keys'
+```
+
+### 第二步：启动 mcpx-toolkit
+
+```bash
+# 使用提取的配置启动
+mcpx-toolkit ~/mcpx_config.json
+```
+
+MCPX 会：
+1. 连接所有配置的 MCP 服务器
+2. 启动 stdio 模式，等待连接
+
+### 第三步：修改 Claude Desktop 配置
+
+备份原配置：
+
+```bash
+cp ~/Library/Application\ Support/Claude/claude_desktop_config.json \
+   ~/Library/Application\ Support/Claude/claude_desktop_config.json.backup
+```
+
+将 `claude_desktop_config.json` 的 `mcpServers` 修改为只保留 `mcpx`：
+
 ```json
 {
   "mcpServers": {
-    "filesystem": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    "mcpx": {
+      "command": "mcpx-toolkit",
+      "args": ["~/mcpx_config.json"]
     }
   }
 }
 ```
 
+### 第四步：重启 Claude Desktop
+
+重启后，所有 MCP 工具将通过 MCPX 统一管理。
+
 ---
 
 ## 使用方式
 
+### 查询工具
+
 ```python
-# 查询工具
-describe(method="filesystem")           # 列出服务器所有工具
-describe(method="filesystem.read_file") # 获取工具详情
+# 列出所有服务器的工具
+describe()
 
-# 执行工具
-call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
+# 列出指定服务器的工具
+describe(server_name="filesystem")
 
-# 读取资源
+# 查看工具的详细 Schema
+describe(server_name="filesystem", tool_name="read_file")
+```
+
+### 执行工具
+
+```python
+call(
+    server_name="filesystem",
+    tool_name="read_file",
+    arguments={"path": "/tmp/file.txt"}
+)
+```
+
+### 列出/读取资源
+
+```python
+# 列出服务器的所有资源
+resources(server_name="filesystem")
+
+# 读取指定资源
 resources(server_name="filesystem", uri="file:///tmp/file.txt")
 ```
+
+---
+
+## 配置文件说明
+
+`mcp_config.json` 格式：
+
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "type": "stdio"
+    },
+    {
+      "name": "http-server",
+      "url": "http://localhost:3000/mcp",
+      "type": "http",
+      "headers": {
+        "Authorization": "Bearer xxx"
+      }
+    }
+  ],
+  "schema_compression_enabled": true,
+  "toon_compression_enabled": true,
+  "toon_compression_min_size": 3,
+  "health_check_enabled": true,
+  "health_check_interval": 30
+}
+```
+
+| 配置项 | 说明 | 默认值 |
+|-------|------|--------|
+| `schema_compression_enabled` | Schema 压缩为 TypeScript 类型 | `true` |
+| `toon_compression_enabled` | TOON 压缩响应数据 | `true` |
+| `toon_compression_min_size` | TOON 压缩最小阈值（KB） | `3` |
+| `health_check_enabled` | 启用健康检查 | `true` |
+| `health_check_interval` | 健康检查间隔（秒） | `30` |
 
 ---
 
@@ -86,11 +223,12 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 
 | 特性 | 说明 |
 |------|------|
-| **按需加载** | 仅暴露 `describe`、`call`、`resources` 三个工具，AI 按需查询详情 |
-| **HTTP/SSE 传输** | 流式 HTTP 传输，支持实时双向通信 |
+| **按需加载** | 仅暴露 `describe`、`call`、`resources` 三个工具 |
+| **双传输** | stdio（Claude Desktop）+ HTTP/SSE |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
-| **会话隔离** | 每次请求使用新会话，自动故障恢复 |
+| **会话隔离** | 每次请求创建新会话，避免状态污染 |
+| **健康检查** | 后台定期探测服务器状态 |
 | **多模态** | 透传图片、资源等非文本内容 |
 
 ### Schema 压缩示例
@@ -103,40 +241,34 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 {path: string}  // 文件路径
 ```
 
-配置项：
-
-```json
-{
-  "schema_compression_enabled": true,
-  "max_description_len": 50
-}
-```
-
 ---
 
-## 路线图
+## HTTP/SSE 模式
 
-### ✅ 已完成
-- FastMCP 框架、工具缓存、执行器
-- HTTP/SSE 流式传输
-- Schema/TOON 压缩、健康检查
-- 多模态内容透传、Docker 支持
-- MCP Resource 动态加载
-- client_factory 模式（会话隔离）
-- E2E 测试 74% 覆盖率
+适用于需要通过 HTTP 访问的场景（如 Web 应用）：
 
-### 📋 待办（P1 高优先级）
-- （暂无高优先级待办）
+```bash
+mcpx-toolkit-sse ~/mcpx_config.json
+```
+
+服务启动在 `http://localhost:8000`，兼容 MCP HTTP/SSE 协议。
 
 ---
 
 ## 开发
 
 ```bash
-# 测试
+# 克隆仓库
+git clone https://github.com/quan2005/mcpx.git
+cd mcpx
+
+# 安装依赖
+uv sync
+
+# 运行测试
 uv run pytest tests/ -v --cov=src/mcpx
 
-# Lint
+# 代码检查
 uv run ruff check src/mcpx tests/
 
 # 类型检查
@@ -148,15 +280,46 @@ uv run mypy src/mcpx
 ## 架构
 
 ```
-AI → describe (查询) / call (执行)
-          ↓
-    MCPX Proxy
-          ↓
-    Schema 缓存 + 连接池
-          ↓
+Claude Desktop
+       ↓
+   MCPX (mcpx-toolkit)
+   ├── describe (查询工具)
+   ├── call (执行工具)
+   └── resources (读取资源)
+       ↓
+   Schema 缓存 + 连接池 + 健康检查
+       ↓
    Server 1 · Server 2 · Server N
 ```
 
+### 核心组件
+
+| 组件 | 职责 |
+|------|------|
+| **Registry** | 连接管理、工具/资源缓存、健康检查 |
+| **Executor** | 工具执行、TOON 压缩、会话隔离 |
+| **ToonCompressor** | TOON 压缩实现 |
+| **HealthChecker** | 后台健康检查和重连 |
+
 ---
+
+## 路线图
+
+### ✅ 已完成
+- FastMCP 框架、工具缓存、长连接执行器
+- stdio + HTTP/SSE 双传输
+- Schema/TOON 压缩、健康检查
+- 多模态内容透传、Docker 支持
+- MCP Resource 动态加载
+- client_factory 模式重构（会话隔离）
+- E2E 测试 74% 覆盖率
+- GitHub Actions 自动发布到 PyPI
+
+### 📋 待办（P1 高优先级）
+- （暂无高优先级待办）
+
+---
+
+## 许可证
 
 MIT License
