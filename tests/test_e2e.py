@@ -90,9 +90,7 @@ class TestMCPXClientE2E:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem"})
 
         content = _extract_text_content(result)
         tools = _parse_response(content)
@@ -121,9 +119,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             # First, list all tools to get a valid tool_name
-            list_result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            list_result = await client.call_tool("describe", arguments={"method": "filesystem"})
             tools = _parse_response(_extract_text_content(list_result))
 
             if tools:
@@ -181,9 +177,7 @@ class TestMCPXClientE2E:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "nonexistent"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "nonexistent"})
 
         content = _extract_text_content(result)
         error_info = _parse_response(content)
@@ -265,9 +259,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             # First get a valid tool
-            list_result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            list_result = await client.call_tool("describe", arguments={"method": "filesystem"})
             tools = _parse_response(_extract_text_content(list_result))
 
             if tools:
@@ -325,9 +317,7 @@ class TestMCPXClientE2E:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "any_server"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "any_server"})
 
         content = _extract_text_content(result)
         error_info = _parse_response(content)
@@ -353,9 +343,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             # Query specific server
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem"})
 
         content = _extract_text_content(result)
         tools = _parse_response(content)
@@ -380,9 +368,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             # Step 1: List tools from server
-            list_result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            list_result = await client.call_tool("describe", arguments={"method": "filesystem"})
             tools = _parse_response(_extract_text_content(list_result))
 
             assert len(tools) > 0
@@ -412,12 +398,8 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client1:
             async with Client(mcp_server) as client2:
-                result1 = await client1.call_tool(
-                    "describe", arguments={"method": "filesystem"}
-                )
-                result2 = await client2.call_tool(
-                    "describe", arguments={"method": "filesystem"}
-                )
+                result1 = await client1.call_tool("describe", arguments={"method": "filesystem"})
+                result2 = await client2.call_tool("describe", arguments={"method": "filesystem"})
 
         tools1 = _parse_response(_extract_text_content(result1))
         tools2 = _parse_response(_extract_text_content(result2))
@@ -499,9 +481,7 @@ class TestMCPXConfigFile:
             mcp_server = create_server(config)
 
             async with Client(mcp_server) as client:
-                result = await client.call_tool(
-                    "describe", arguments={"method": "fs"}
-                )
+                result = await client.call_tool("describe", arguments={"method": "fs"})
 
             tools = _parse_response(_extract_text_content(result))
             assert len(tools) > 0
@@ -511,9 +491,7 @@ class TestMCPXConfigFile:
 
     async def test_config_with_invalid_json(self):
         """Test: Invalid JSON returns clear error."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write("{invalid json}")
             config_path = Path(f.name)
 
@@ -525,9 +503,7 @@ class TestMCPXConfigFile:
 
     async def test_config_with_invalid_structure(self):
         """Test: Invalid structure (mcpServers not a dict) returns clear error."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"mcpServers": "not-a-dict"}, f)
             config_path = Path(f.name)
 
@@ -561,9 +537,7 @@ class TestMCPXErrorHandling:
 
         # Server should start and valid server tools should be available
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "valid-server"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "valid-server"})
 
         tools = _parse_response(_extract_text_content(result))
 

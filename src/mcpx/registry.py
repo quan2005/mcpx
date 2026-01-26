@@ -143,9 +143,7 @@ class Registry:
         # Set callback for health checker to get client factory
         self._health_checker.set_session_callback(self._get_client_for_health_check)
 
-    def _create_client_factory(
-        self, server_config: McpServerConfig
-    ) -> Callable[[], McpClient]:
+    def _create_client_factory(self, server_config: McpServerConfig) -> Callable[[], McpClient]:
         """Create a client factory for a server.
 
         The factory returns a new client instance on each call.
@@ -316,7 +314,11 @@ class Registry:
         for server_name in sorted(self._client_factories.keys()):
             lines.append(f"  Server: {server_name}")
             for tool in self.list_tools(server_name):
-                desc = tool.description[:60] + "..." if len(tool.description) > 60 else tool.description
+                desc = (
+                    tool.description[:60] + "..."
+                    if len(tool.description) > 60
+                    else tool.description
+                )
                 lines.append(f"    - {tool.name}: {desc}")
         return "\n".join(lines)
 
@@ -342,10 +344,7 @@ class Registry:
         Returns:
             List of tool information for the specified server
         """
-        return [
-            tool for tool in self._tools.values()
-            if tool.server_name == server_name
-        ]
+        return [tool for tool in self._tools.values() if tool.server_name == server_name]
 
     def list_all_tools(self) -> list[ToolInfo]:
         """List all cached tools from all servers.
@@ -365,8 +364,7 @@ class Registry:
             List of resource information for the specified server
         """
         return [
-            resource for resource in self._resources.values()
-            if resource.server_name == server_name
+            resource for resource in self._resources.values() if resource.server_name == server_name
         ]
 
     def list_all_resources(self) -> list[ResourceInfo]:
@@ -390,9 +388,7 @@ class Registry:
         resource_key = f"{server_name}:{uri}"
         return self._resources.get(resource_key)
 
-    async def read_resource(
-        self, server_name: str, uri: str
-    ) -> Any | None:
+    async def read_resource(self, server_name: str, uri: str) -> Any | None:
         """Read resource content using a fresh session.
 
         Args:

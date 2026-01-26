@@ -229,9 +229,7 @@ class TestServerConfigValidation:
 
     def test_server_config_http_defaults(self):
         """Test: HTTP ServerConfig has correct defaults."""
-        config = McpServerConfig(
-            name="test", type="http", url="http://localhost:8080/mcp"
-        )
+        config = McpServerConfig(name="test", type="http", url="http://localhost:8080/mcp")
 
         assert config.type == "http"
         assert config.url == "http://localhost:8080/mcp"
@@ -281,9 +279,7 @@ class TestExecutorEdgeCases:
             executor = Executor(registry, toon_compression_enabled=True)
 
             # Execute tool that returns array data
-            result = await executor.execute(
-                "filesystem", "list_allowed_directories", {}
-            )
+            result = await executor.execute("filesystem", "list_allowed_directories", {})
 
             assert result.success is True
             # Result should have compression fields
@@ -317,15 +313,11 @@ class TestExecutorEdgeCases:
 
         try:
             # First call should succeed
-            result1 = await executor.execute(
-                "filesystem", "list_allowed_directories", {}
-            )
+            result1 = await executor.execute("filesystem", "list_allowed_directories", {})
             assert result1.success is True
 
             # Second call should also succeed (connection is stable)
-            result2 = await executor.execute(
-                "filesystem", "list_allowed_directories", {}
-            )
+            result2 = await executor.execute("filesystem", "list_allowed_directories", {})
             assert result2.success is True
         finally:
             await registry.close()

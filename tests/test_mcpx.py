@@ -186,6 +186,7 @@ async def test_call_validation_returns_tool_schema():
     # Add a dummy client factory
     def dummy_factory():
         return object()
+
     registry._client_factories["dummy"] = dummy_factory
 
     tool_schema = {

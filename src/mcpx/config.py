@@ -47,7 +47,9 @@ class McpServerConfig(BaseModel):
             if not self.url:
                 raise ValueError(f"Server '{server_name}': http type requires 'url' field")
         else:
-            raise ValueError(f"Server '{server_name}': unknown type '{self.type}', must be 'stdio' or 'http'")
+            raise ValueError(
+                f"Server '{server_name}': unknown type '{self.type}', must be 'stdio' or 'http'"
+            )
 
 
 class ProxyConfig(BaseModel):

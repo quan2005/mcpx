@@ -44,6 +44,7 @@ def _parse_response(content: str) -> Any:
 
     try:
         import toons
+
         return toons.loads(content)
     except Exception:
         pass
@@ -65,7 +66,9 @@ class TestMethodParsing:
             ("a.b", "a", "b"),
         ],
     )
-    def test_method_parsing_valid(self, method_str: str, expected_server: str, expected_tool: str | None) -> None:
+    def test_method_parsing_valid(
+        self, method_str: str, expected_server: str, expected_tool: str | None
+    ) -> None:
         """Test valid method string parsing."""
         parts = method_str.split(".", 1)
         server_name = parts[0]
@@ -115,9 +118,7 @@ class TestDescribeAPI:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem"})
 
         content = _extract_text_content(result)
         tools = _parse_response(content)
@@ -147,9 +148,7 @@ class TestDescribeAPI:
 
         async with Client(mcp_server) as client:
             # First get a tool name
-            list_result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            list_result = await client.call_tool("describe", arguments={"method": "filesystem"})
             tools = _parse_response(_extract_text_content(list_result))
             assert len(tools) > 0
 
@@ -183,9 +182,7 @@ class TestDescribeAPI:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "nonexistent"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "nonexistent"})
 
         content = _extract_text_content(result)
         error_info = _parse_response(content)
@@ -353,9 +350,7 @@ class TestErrorHandling:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": ""}
-            )
+            result = await client.call_tool("describe", arguments={"method": ""})
 
         content = _extract_text_content(result)
         error_info = _parse_response(content)
@@ -377,9 +372,7 @@ class TestErrorHandling:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "call", arguments={"method": ""}
-            )
+            result = await client.call_tool("call", arguments={"method": ""})
 
         content = _extract_text_content(result)
         error_info = _parse_response(content)
@@ -402,9 +395,7 @@ class TestErrorHandling:
 
         async with Client(mcp_server) as client:
             # describe with trailing dot - should treat as server only
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem."}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem."})
 
         content = _extract_text_content(result)
         # "filesystem." splits to ("filesystem", "")
@@ -461,9 +452,7 @@ class TestSchemaCompressionInDescribe:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem"})
 
         content = _extract_text_content(result)
         tools = _parse_response(content)
@@ -493,9 +482,7 @@ class TestSchemaCompressionInDescribe:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem"})
 
         content = _extract_text_content(result)
         tools = _parse_response(content)
@@ -530,9 +517,7 @@ class TestToonCompressionInDescribe:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem"})
 
         content = _extract_text_content(result)
         # TOON compressed content should be parseable by toons library
@@ -557,9 +542,7 @@ class TestToonCompressionInDescribe:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem"}
-            )
+            result = await client.call_tool("describe", arguments={"method": "filesystem"})
 
         content = _extract_text_content(result)
         # Should be plain JSON

@@ -79,7 +79,9 @@ class HealthStatus(BaseModel):
                 name: {
                     "status": server.status,
                     "last_check": server.last_check.isoformat() if server.last_check else None,
-                    "last_success": server.last_success.isoformat() if server.last_success else None,
+                    "last_success": server.last_success.isoformat()
+                    if server.last_success
+                    else None,
                     "consecutive_failures": server.consecutive_failures,
                     "last_error": server.last_error,
                 }
@@ -153,9 +155,7 @@ class HealthChecker:
                     await asyncio.wait_for(client.ping(), timeout=self._check_timeout)
                 else:
                     # Fallback: try to list tools (lightweight operation)
-                    await asyncio.wait_for(
-                        client.list_tools(), timeout=self._check_timeout
-                    )
+                    await asyncio.wait_for(client.list_tools(), timeout=self._check_timeout)
 
             self._status.update_server(server_name, True)
             logger.debug(f"Health check passed for '{server_name}'")

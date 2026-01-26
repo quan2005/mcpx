@@ -44,6 +44,7 @@ def _setup_fastmcp_logging() -> None:
     fastmcp_server_logger = logging.getLogger("fastmcp.server.server")
     fastmcp_server_logger.addFilter(ValidationErrorFilter())
 
+
 __all__ = [
     "McpServerConfig",
     "ProxyConfig",
@@ -133,7 +134,11 @@ def generate_resources_description(registry: "Registry") -> str:
             resources_desc_lines.append(
                 f"    - {resource.name} ({resource.uri}){mime_info}{size_info}{desc}"
             )
-    return "\n".join(resources_desc_lines) if len(resources_desc_lines) > 1 else "No resources available."
+    return (
+        "\n".join(resources_desc_lines)
+        if len(resources_desc_lines) > 1
+        else "No resources available."
+    )
 
 
 def load_config(config_path: Path) -> ProxyConfig:
@@ -220,7 +225,7 @@ def create_server(
         return input_schema
 
     # Build the describe description
-    base_desc = "Query tool information from MCP servers.\n\nExample: describe(method=\"filesystem.read_file\")\n\n"
+    base_desc = 'Query tool information from MCP servers.\n\nExample: describe(method="filesystem.read_file")\n\n'
     if tools_description:
         full_desc = base_desc + tools_description
     else:
@@ -358,7 +363,14 @@ def create_server(
     async def call(
         method: str,
         arguments: dict[str, object] | None = None,
-    ) -> ToolResult | str | TextContent | ImageContent | EmbeddedResource | list[TextContent | ImageContent | EmbeddedResource]:
+    ) -> (
+        ToolResult
+        | str
+        | TextContent
+        | ImageContent
+        | EmbeddedResource
+        | list[TextContent | ImageContent | EmbeddedResource]
+    ):
         """Execute an MCP tool.
 
         Args:
@@ -427,7 +439,10 @@ def create_server(
                 return raw_data
             # 包含多模态内容的列表：直接返回
             if isinstance(raw_data, list):
-                if any(isinstance(item, (TextContent, ImageContent, EmbeddedResource)) for item in raw_data):
+                if any(
+                    isinstance(item, (TextContent, ImageContent, EmbeddedResource))
+                    for item in raw_data
+                ):
                     return raw_data
 
             # 普通数据：返回 ToolResult
@@ -436,7 +451,9 @@ def create_server(
             if result.compressed and isinstance(compressed_data, str):
                 # 压缩成功：content 是 TOON 字符串
                 if config.include_structured_content:
-                    return ToolResult(content=compressed_data, structured_content={"result": raw_data})
+                    return ToolResult(
+                        content=compressed_data, structured_content={"result": raw_data}
+                    )
                 return ToolResult(content=compressed_data)
             else:
                 # 未压缩
@@ -449,7 +466,7 @@ def create_server(
         return json.dumps(exec_error_data, ensure_ascii=False)
 
     # Build the resources description
-    base_resources_desc = "Read MCP server resources.\n\nExample: resources(server_name=\"filesystem\", uri=\"file:///tmp/file.txt\")\n\n"
+    base_resources_desc = 'Read MCP server resources.\n\nExample: resources(server_name="filesystem", uri="file:///tmp/file.txt")\n\n'
     if resources_description:
         full_resources_desc = base_resources_desc + resources_description
     else:
@@ -524,11 +541,13 @@ def create_server(
             if hasattr(content, "text"):
                 result_list.append({"uri": str(content.uri), "text": content.text})
             elif hasattr(content, "blob"):
-                result_list.append({
-                    "uri": str(content.uri),
-                    "mime_type": content.mimeType,
-                    "blob": content.blob,
-                })
+                result_list.append(
+                    {
+                        "uri": str(content.uri),
+                        "mime_type": content.mimeType,
+                        "blob": content.blob,
+                    }
+                )
         return result_list
 
     return mcp

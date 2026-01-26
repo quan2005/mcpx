@@ -102,6 +102,7 @@ class TestDetectContentType:
 
     def test_detect_unknown_type(self) -> None:
         """测试检测未知类型。"""
+
         class CustomType:
             pass
 

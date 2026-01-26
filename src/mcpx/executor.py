@@ -158,7 +158,9 @@ class Executor:
         # MCP protocol uses content attribute with list of content items
         if hasattr(result, "content"):
             content_list = result.content
-            logger.debug(f"Result has content with {len(content_list) if content_list else 0} items")
+            logger.debug(
+                f"Result has content with {len(content_list) if content_list else 0} items"
+            )
 
             if not content_list:
                 return None
@@ -232,7 +234,6 @@ class Executor:
         """
         if not text:
             return text
-
 
         # First, try to parse the text directly as JSON
         try:
