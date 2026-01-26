@@ -46,14 +46,14 @@ AI 收到的是一份简洁的"工具目录"，按需查询详情。
 ```
 帮我安装和配置 mcpx-toolkit，让所有 MCP 工具通过 mcpx-toolkit 统一管理。
 
-注意：我的 claude_desktop_config.json 文件很大，请用 jq 命令精准提取 mcpServers 配置，
+注意：我的 ~/.claude.json 文件很大，请用 jq 命令精准提取 mcpServers 配置，
 不要读取整个文件。具体步骤请参考：
 https://raw.githubusercontent.com/quan2005/mcpx/main/README.md
 ```
 
 ### 给 LLM Agent
 
-> ⚠️ **重要提示**：`~/.claude.json` 或 `claude_desktop_config.json` 文件可能非常大（数千行）。
+> ⚠️ **重要提示**：`~/.claude.json` 文件可能非常大（数千行）。
 > **务必使用 `jq` 命令精准提取 `mcpServers` 配置**，不要直接读取整个文件。
 
 安装 `mcpx-toolkit`：
@@ -74,69 +74,72 @@ pip install mcpx-toolkit
 
 ### 第一步：提取现有 MCP 配置
 
-> ⚠️ **Claude 配置文件可能非常大**，包含大量历史对话和其他设置。
+> ⚠️ **Claude Code 配置文件可能非常大**，包含大量历史对话和其他设置。
 > **请务必使用 `jq` 精准提取 `mcpServers` 字段**，避免读取整个文件导致上下文溢出。
 
-查找配置文件位置：
+查找 Claude Code 配置文件：
 
 | 系统 | 路径 |
 |------|------|
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-| Linux | `~/.config/Claude/claude_desktop_config.json` |
+| macOS | `~/.claude.json` |
+| Windows | `~/.claude.json` |
+| Linux | `~/.claude.json` |
 
-使用 `jq` 精准提取 `mcpServers`：
+使用 `jq` 精准提取 `mcpServers` 到推荐目录：
 
 ```bash
-# macOS/Linux - 只提取 mcpServers 字段
-jq '.mcpServers' ~/Library/Application\ Support/Claude/claude_desktop_config.json > ~/mcpx_config.json
+# 创建 mcpx-toolkit 配置目录
+mkdir -p ~/.config/mcpx-toolkit
+
+# 提取 mcpServers 配置
+jq '.mcpServers' ~/.claude.json > ~/.config/mcpx-toolkit/mcpx.json
 
 # Windows (PowerShell)
-Get-Content "$env:APPDATA\Claude\claude_desktop_config.json" | \
+New-Item -ItemType Directory -Force -Path ~/.config/mcpx-toolkit
+Get-Content ~/.claude.json | \
   ConvertFrom-Json | Select-Object -ExpandProperty mcpServers | \
-  ConvertTo-Json -Depth 10 | Out-File ~/mcpx_config.json
+  ConvertTo-Json -Depth 10 | Out-File ~/.config/mcpx-toolkit/mcpx.json
 ```
 
 验证提取结果（应该只包含 MCP 服务器配置）：
 
 ```bash
-cat ~/mcpx_config.json | jq 'keys'
+cat ~/.config/mcpx-toolkit/mcpx.json | jq 'keys'
 ```
 
 ### 第二步：启动 mcpx-toolkit
 
 ```bash
 # 使用提取的配置启动
-mcpx-toolkit ~/mcpx_config.json
+mcpx-toolkit ~/.config/mcpx-toolkit/mcpx.json
 ```
 
 MCPX 会：
 1. 连接所有配置的 MCP 服务器
 2. 启动 stdio 模式，等待连接
 
-### 第三步：修改 Claude Desktop 配置
+### 第三步：修改 Claude Code 配置
 
 备份原配置：
 
 ```bash
-cp ~/Library/Application\ Support/Claude/claude_desktop_config.json \
-   ~/Library/Application\ Support/Claude/claude_desktop_config.json.backup
+cp ~/.claude.json ~/.claude.json.backup
 ```
 
-将 `claude_desktop_config.json` 的 `mcpServers` 修改为只保留 `mcpx`：
+将 `~/.claude.json` 的 `mcpServers` 修改为只保留 `mcpx`：
 
 ```json
 {
   "mcpServers": {
     "mcpx": {
       "command": "mcpx-toolkit",
-      "args": ["~/mcpx_config.json"]
+      "args": ["~/.config/mcpx-toolkit/mcpx.json"]
     }
   }
 }
 ```
 
-### 第四步：重启 Claude Desktop
+### 第四步：重启 Claude Code
 
 重启后，所有 MCP 工具将通过 MCPX 统一管理。
 
@@ -181,7 +184,9 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 
 ## 配置文件说明
 
-`mcp_config.json` 格式：
+推荐配置文件路径：`~/.config/mcpx-toolkit/mcpx.json`
+
+格式说明：
 
 ```json
 {
@@ -248,7 +253,7 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 适用于需要通过 HTTP 访问的场景（如 Web 应用）：
 
 ```bash
-mcpx-toolkit-sse ~/mcpx_config.json
+mcpx-toolkit-sse ~/.config/mcpx-toolkit/mcpx.json
 ```
 
 服务启动在 `http://localhost:8000`，兼容 MCP HTTP/SSE 协议。
