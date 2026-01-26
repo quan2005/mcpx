@@ -116,7 +116,7 @@ mcpx-toolkit ~/.config/mcpx-toolkit/mcpx.json
 
 MCPX 会：
 1. 连接所有配置的 MCP 服务器
-2. 启动 stdio 模式，等待连接
+2. 启动 HTTP/SSE 模式，等待连接（默认 `http://localhost:8000`）
 
 ### 第三步：修改 Claude Code 配置
 
@@ -229,7 +229,7 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 | 特性 | 说明 |
 |------|------|
 | **按需加载** | 仅暴露 `describe`、`call`、`resources` 三个工具 |
-| **双传输** | stdio（Claude Desktop）+ HTTP/SSE |
+| **双传输** | HTTP/SSE（默认）/ 可扩展 stdio |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
 | **会话隔离** | 每次请求创建新会话，避免状态污染 |
@@ -312,7 +312,7 @@ Claude Desktop
 
 ### ✅ 已完成
 - FastMCP 框架、工具缓存、长连接执行器
-- stdio + HTTP/SSE 双传输
+- HTTP/SSE 传输支持
 - Schema/TOON 压缩、健康检查
 - 多模态内容透传、Docker 支持
 - MCP Resource 动态加载
