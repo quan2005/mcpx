@@ -22,10 +22,61 @@ uv run ruff check src/mcpx tests/
 uv run mypy src/mcpx
 
 # HTTP/SSE 模式运行（默认端口 8000）
-uv run mcpx config.json
+uv run mcpx-toolkit config.json
 
 # 指定端口和主机
-uv run mcpx --port 3000 --host 127.0.0.1 config.json
+uv run mcpx-toolkit --port 3000 --host 127.0.0.1 config.json
+```
+
+## 开发流程
+
+本项目使用 **skills** 规范 AI 开发流程（位于 `.claude/skills/`）。
+
+### 开始开发前的第一步
+
+**告诉 AI：加载 mcpx-getting-started skill**
+
+这会加载项目的所有开发流程规范。
+
+### 完整开发流程
+
+```
+1. TDD 开发 (mcpx-tdd-workflow)
+   ├─ RED:   先写失败的测试
+   ├─ GREEN: 写最小代码使测试通过
+   └─ REFACTOR: 优化代码结构
+
+2. 代码检查 (mcpx-code-quality)
+   ├─ uv run ruff format src/mcpx tests/
+   ├─ uv run ruff check src/mcpx tests/
+   ├─ uv run mypy src/mcpx
+   └─ uv run pytest tests/ -v --cov=src/mcpx (覆盖率 ≥ 70%)
+
+3. 文档更新 (mcpx-documentation)
+   ├─ CLAUDE.md (AI 开发指南)
+   ├─ README.md (用户文档)
+   └─ docs/roadmap.md (功能状态)
+
+4. 提交代码
+   └─ git commit -m "<type>: <中文描述>"
+```
+
+### Skills 快速参考
+
+| Skill | 用途 | 触发时机 |
+|-------|------|----------|
+| `mcpx-getting-started` | 入口，加载所有 skills | 开始任何工作前 |
+| `mcpx-tdd-workflow` | TDD 开发（RED-GREEN-REFACTOR） | 实现功能或 bug 修复 |
+| `mcpx-code-quality` | 代码质量检查（lint/types/test） | 提交代码前 |
+| `mcpx-documentation` | 文档更新规范 | 代码变更影响功能时 |
+| `mcpx-release` | 版本发布流程 | 准备发布版本时 |
+
+### 提交规范
+
+```
+<type>: <中文描述>
+
+类型：feat, fix, docs, style, refactor, perf, test, chore
 ```
 
 ## 技术栈
@@ -190,10 +241,11 @@ MCPX 使用 Claude Code 兼容的配置格式：
 
 - `mcpServers`: 服务器配置字典（key 为服务器名称）
   - `type`: 传输类型，`"stdio"` 或 `"http"`（默认 `"stdio"`）
+    - `"http"` 类型会自动检测：URL 包含 `/sse` 使用 `SSETransport`，否则使用 `StreamableHttpTransport`
   - `command`: stdio 类型的命令
   - `args`: 命令参数数组
   - `env`: 环境变量字典（可选）
-  - `url`: http 类型的 URL
+  - `url`: http 类型的 URL（支持 SSE 和 Streamable HTTP）
   - `headers`: HTTP 请求头（可选）
 
 ## 测试要求
