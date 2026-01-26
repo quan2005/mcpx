@@ -59,11 +59,14 @@ jobs:
           name: package
           path: dist/
 
+      - name: Create virtual environment
+        run: uv venv
+
       - name: Verify package
         run: |
           uv pip install --reinstall-package mcpx dist/*.whl
-          mcpx --help || true
-          mcpx-sse --help || true
+          mcpx-toolkit --help || true
+          mcpx-toolkit-sse --help || true
 
   publish-test:
     name: Publish to TestPyPI
