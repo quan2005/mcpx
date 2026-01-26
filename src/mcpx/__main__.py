@@ -661,6 +661,12 @@ def main(port: int = 8000, host: str = "0.0.0.0") -> None:
 
     logger.info(f"Starting HTTP server on {host}:{port}")
     logger.info(f"MCP endpoint: http://{host}:{port}/mcp/")
+    logger.info("")
+    logger.info("感谢使用 mcpx-toolkit! 🎉")
+    logger.info("如果这个项目对你有帮助，请去 GitHub 点个 star:")
+    logger.info("https://github.com/quan2005/mcpx")
+    logger.info("")
+
     uvicorn.run(app, host=host, port=port)
 
 
