@@ -97,7 +97,8 @@ src/mcpx/
 ├── compression.py # ToonCompressor：TOON 压缩实现
 ├── schema_ts.py   # json_schema_to_typescript：Schema 压缩
 ├── content.py     # 多模态内容处理（TextContent/ImageContent/EmbeddedResource）
-└── health.py      # HealthChecker：健康检查和重连
+├── health.py      # HealthChecker：健康检查和重连
+└── port_utils.py  # find_available_port：端口可用性检测和自动切换
 ```
 
 ## 核心架构
@@ -210,6 +211,14 @@ call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
 - 检查完成后自动关闭临时会话
 - 失败阈值达到后标记服务器不健康
 - 提供 `get_server_health()` 查询状态
+
+### 7. 端口自动切换
+
+`main()` 启动前自动检测端口可用性：
+- 使用 `find_available_port(port, host)` 检测端口是否被占用
+- 如果端口被占用，自动尝试下一个可用端口（最多 100 次）
+- 启动日志会显示实际使用的端口
+- 实现位于 `port_utils.py` 模块
 
 ## 配置
 

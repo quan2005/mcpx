@@ -15,6 +15,7 @@ from fastmcp.tools.tool import ToolResult
 from mcp.types import EmbeddedResource, ImageContent, TextContent
 
 from mcpx.config import McpServerConfig, ProxyConfig
+from mcpx.port_utils import find_available_port
 from mcpx.schema_ts import json_schema_to_typescript
 
 if TYPE_CHECKING:
@@ -678,15 +679,20 @@ def main(port: int = 8000, host: str = "0.0.0.0") -> None:
         routes=[Mount("/", app=mcp_app)],
     )
 
-    logger.info(f"Starting HTTP server on {host}:{port}")
-    logger.info(f"MCP endpoint: http://{host}:{port}/mcp/")
+    # Find an available port (auto-switch if the requested port is occupied)
+    actual_port = find_available_port(port, host=host)
+    if actual_port != port:
+        logger.warning(f"Port {port} is occupied, using port {actual_port} instead")
+
+    logger.info(f"Starting HTTP server on {host}:{actual_port}")
+    logger.info(f"MCP endpoint: http://{host}:{actual_port}/mcp/")
     logger.info("")
     logger.info("感谢使用 mcpx-toolkit! 🎉")
     logger.info("如果这个项目对你有帮助，请去 GitHub 点个 star:")
     logger.info("https://github.com/quan2005/mcpx")
     logger.info("")
 
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=actual_port)
 
 
 if __name__ == "__main__":

@@ -53,8 +53,9 @@ https://raw.githubusercontent.com/quan2005/mcpx/main/README.md
 
 ### 给 LLM Agent
 
-> ⚠️ **重要提示**：`~/.claude.json` 文件可能非常大（数千行）。
-> **务必使用 `jq` 命令精准提取 `mcpServers` 配置**，不要直接读取整个文件。
+> ⚠️ **重要提示**：
+> 1. `~/.claude.json` 文件可能非常大（数千行），**务必使用 `jq` 命令精准提取 `mcpServers` 配置**
+> 2. `mcpx-toolkit` 应配置为**后台服务并开机自启**，不要直接运行
 
 安装 `mcpx-toolkit`：
 
@@ -107,16 +108,97 @@ Get-Content ~/.claude.json | \
 cat ~/.config/mcpx-toolkit/mcpx.json | jq 'keys'
 ```
 
-### 第二步：启动 mcpx-toolkit
+### 第二步：配置后台服务（推荐）
+
+> ⚠️ **重要**：不要直接运行 `mcpx-toolkit`，应该配置为后台服务并开机自启。
+
+#### macOS（使用 launchd）
+
+创建服务配置文件：
 
 ```bash
-# 使用提取的配置启动
-mcpx-toolkit ~/.config/mcpx-toolkit/mcpx.json
+# 创建 launchd 配置
+cat > ~/Library/LaunchAgents/com.mcpx-toolkit.service.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mcpx-toolkit.service</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/mcpx-toolkit</string>
+        <string>/Users/YOUR_USERNAME/.config/mcpx-toolkit/mcpx.json</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/mcpx-toolkit.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/mcpx-toolkit.stderr.log</string>
+</dict>
+</plist>
+EOF
+
+# 替换 YOUR_USERNAME 为你的用户名
+sed -i '' "s|YOUR_USERNAME|$USER|" ~/Library/LaunchAgents/com.mcpx-toolkit.service.plist
+
+# 加载并启动服务
+launchctl load ~/Library/LaunchAgents/com.mcpx-toolkit.service.plist
+
+# 检查服务状态
+launchctl list | grep mcpx
 ```
 
-MCPX 会：
-1. 连接所有配置的 MCP 服务器
-2. 启动 HTTP/SSE 模式，等待连接（默认 `http://localhost:8000`）
+#### Linux（使用 systemd）
+
+创建服务配置文件：
+
+```bash
+# 创建 systemd 服务文件
+cat > ~/.config/systemd/user/mcpx-toolkit.service << 'EOF'
+[Unit]
+Description=MCPX Toolkit - MCP Proxy Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mcpx-toolkit /home/YOUR_USERNAME/.config/mcpx-toolkit/mcpx.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+# 替换 YOUR_USERNAME 为你的用户名
+sed -i "s|YOUR_USERNAME|$USER|" ~/.config/systemd/user/mcpx-toolkit.service
+
+# 重载并启用服务
+systemctl --user daemon-reload
+systemctl --user enable mcpx-toolkit.service
+systemctl --user start mcpx-toolkit.service
+
+# 检查服务状态
+systemctl --user status mcpx-toolkit.service
+```
+
+#### 临时测试（仅用于调试）
+
+如果需要临时测试服务（不推荐用于生产环境）：
+
+```bash
+# 后台运行
+nohup mcpx-toolkit ~/.config/mcpx-toolkit/mcpx.json > /tmp/mcpx-toolkit.log 2>&1 &
+
+# 查看日志
+tail -f /tmp/mcpx-toolkit.log
+
+# 停止服务
+pkill -f mcpx-toolkit
+```
 
 ### 第三步：修改 Claude Code 配置
 
@@ -132,16 +214,51 @@ cp ~/.claude.json ~/.claude.json.backup
 {
   "mcpServers": {
     "mcpx": {
-      "command": "mcpx-toolkit",
-      "args": ["~/.config/mcpx-toolkit/mcpx.json"]
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
     }
   }
 }
 ```
 
+> **注意**：`mcpx-toolkit` 服务已经在后台运行。如果 8000 端口被占用，服务会自动切换到可用端口（如 8001、8002...），可通过日志查看实际端口。
+
 ### 第四步：重启 Claude Code
 
 重启后，所有 MCP 工具将通过 MCPX 统一管理。
+
+### 服务管理命令
+
+**macOS（launchd）**：
+```bash
+# 停止服务
+launchctl unload ~/Library/LaunchAgents/com.mcpx-toolkit.service.plist
+
+# 启动服务
+launchctl load ~/Library/LaunchAgents/com.mcpx-toolkit.service.plist
+
+# 重启服务
+launchctl unload ~/Library/LaunchAgents/com.mcpx-toolkit.service.plist
+launchctl load ~/Library/LaunchAgents/com.mcpx-toolkit.service.plist
+
+# 查看日志
+tail -f /tmp/mcpx-toolkit.stdout.log
+```
+
+**Linux（systemd）**：
+```bash
+# 停止服务
+systemctl --user stop mcpx-toolkit.service
+
+# 启动服务
+systemctl --user start mcpx-toolkit.service
+
+# 重启服务
+systemctl --user restart mcpx-toolkit.service
+
+# 查看日志
+journalctl --user -u mcpx-toolkit.service -f
+```
 
 ---
 
@@ -250,13 +367,31 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 
 ## HTTP/SSE 模式
 
-适用于需要通过 HTTP 访问的场景（如 Web 应用）：
+`mcpx-toolkit` 默认以 HTTP/SSE 模式运行，服务启动在 `http://localhost:8000/mcp`，兼容 MCP HTTP/SSE 协议。
 
-```bash
-mcpx-toolkit-sse ~/.config/mcpx-toolkit/mcpx.json
+**端口自动切换**：如果指定端口被占用，服务会自动尝试后续端口（8001、8002...），并在日志中显示实际监听的端口。
+
+### 修改端口
+
+编辑服务配置文件，在启动命令中添加 `--port` 参数：
+
+**macOS（launchd）**：
+```xml
+<key>ProgramArguments</key>
+<array>
+    <string>/usr/local/bin/mcpx-toolkit</string>
+    <string>--port</string>
+    <string>3000</string>
+    <string>/Users/YOUR_USERNAME/.config/mcpx-toolkit/mcpx.json</string>
+</array>
 ```
 
-服务启动在 `http://localhost:8000`，兼容 MCP HTTP/SSE 协议。
+**Linux（systemd）**：
+```ini
+ExecStart=/usr/local/bin/mcpx-toolkit --port 3000 /home/YOUR_USERNAME/.config/mcpx-toolkit/mcpx.json
+```
+
+修改后重新加载服务即可。
 
 ---
 
