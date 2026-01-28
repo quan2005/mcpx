@@ -46,6 +46,25 @@ def _setup_fastmcp_logging() -> None:
     fastmcp_server_logger.addFilter(ValidationErrorFilter())
 
 
+def _setup_http_client_logging() -> None:
+    """Configure HTTP client logging to reduce noise.
+
+    FastMCP's HTTP/SSE transports use httpcore/httpx which may log
+    connection attempts and 405 responses during endpoint probing.
+    """
+    # Suppress httpcore connection logs (includes HEAD probes)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpcore.connection").setLevel(logging.WARNING)
+    logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+    logging.getLogger("httpcore.http2").setLevel(logging.WARNING)
+
+    # Suppress httpx logs
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    # Suppress uvicorn access logs from proxied servers (if they appear in our logs)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+
 __all__ = [
     "McpServerConfig",
     "ProxyConfig",
@@ -575,6 +594,7 @@ def main(port: int = 8000, host: str = "0.0.0.0") -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     _setup_fastmcp_logging()
+    _setup_http_client_logging()
 
     # Parse command line args first
     parser = argparse.ArgumentParser(
