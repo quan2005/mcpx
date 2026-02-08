@@ -1,6 +1,6 @@
 # MCPX
 
-> 把 100 个 MCP 工具变成 3 个 —— 让 AI 专注于真正重要的事情
+> 把 100 个 MCP 工具变成 2 个 —— 让 AI 专注于真正重要的事情
 
 ---
 
@@ -19,13 +19,12 @@
 
 ### 解决方案
 
-MCPX 只暴露三个工具：
+MCPX 只暴露两个工具：
 
 | 工具 | 用途 |
 |------|------|
-| `describe` | 查询可用工具及其 Schema |
-| `call` | 执行任意 MCP 工具 |
-| `resources` | 列出或读取 MCP 服务器资源 |
+| `invoke` | 执行任意 MCP 工具（出错时返回可用服务器/工具/schema） |
+| `read` | 读取 MCP 服务器资源 |
 
 AI 收到的是一份简洁的"工具目录"，按需查询详情。
 
@@ -264,33 +263,24 @@ journalctl --user -u mcpx-toolkit.service -f
 
 ## 使用方式
 
-### 查询工具
-
-```python
-# 列出指定服务器的所有工具
-describe(method="filesystem")
-
-# 查看工具的详细 Schema
-describe(method="filesystem.read_file")
-```
-
 ### 执行工具
 
 ```python
-call(
+invoke(
     method="filesystem.read_file",
     arguments={"path": "/tmp/file.txt"}
 )
 ```
 
-### 列出/读取资源
+**错误处理**：当调用失败时，`invoke` 会返回有用的信息：
+- 服务器不存在：返回 `error` + `available_servers` 列表
+- 工具不存在：返回 `error` + `available_tools` 列表
+- 参数无效：返回 `error` + `tool_schema`
+
+### 读取资源
 
 ```python
-# 列出服务器的所有资源
-resources(server_name="filesystem")
-
-# 读取指定资源
-resources(server_name="filesystem", uri="file:///tmp/file.txt")
+read(server_name="filesystem", uri="file:///tmp/file.txt")
 ```
 
 ---
@@ -345,7 +335,7 @@ resources(server_name="filesystem", uri="file:///tmp/file.txt")
 
 | 特性 | 说明 |
 |------|------|
-| **按需加载** | 仅暴露 `describe`、`call`、`resources` 三个工具 |
+| **极简 API** | 仅暴露 `invoke`、`read` 两个工具 |
 | **多传输** | stdio / Streamable HTTP / SSE（自动检测） |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
@@ -444,9 +434,8 @@ AI 会自动加载并遵循项目的开发流程规范。
 Claude Desktop
        ↓
    MCPX (mcpx-toolkit)
-   ├── describe (查询工具)
-   ├── call (执行工具)
-   └── resources (读取资源)
+   ├── invoke (执行工具，出错时返回 schema)
+   └── read (读取资源)
        ↓
    Schema 缓存 + 连接池 + 健康检查
        ↓

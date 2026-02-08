@@ -208,7 +208,7 @@ async def test_call_validation_returns_tool_schema():
 
     async with Client(mcp_server) as client:
         result = await client.call_tool(
-            "call",
+            "invoke",
             arguments={
                 "method": "dummy.read_file",
                 "arguments": {"mode": "fast"},

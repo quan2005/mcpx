@@ -99,125 +99,6 @@ class TestMethodParsing:
         assert tool_name is None or isinstance(tool_name, str)
 
 
-class TestDescribeAPI:
-    """Tests for the describe tool with method parameter."""
-
-    async def test_describe_with_server_only(self) -> None:
-        """Test describe(method='server') returns all tools from server."""
-        tmp_dir = TMP_DIR
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": "filesystem"})
-
-        content = _extract_text_content(result)
-        tools = _parse_response(content)
-
-        assert isinstance(tools, list)
-        assert len(tools) > 0
-        for tool in tools:
-            assert "method" in tool
-            assert "description" in tool
-            assert "input_schema" in tool
-            assert tool["method"].startswith("filesystem.")
-
-    async def test_describe_with_server_tool(self) -> None:
-        """Test describe(method='server.tool') returns specific tool schema."""
-        tmp_dir = TMP_DIR
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            # First get a tool name
-            list_result = await client.call_tool("describe", arguments={"method": "filesystem"})
-            tools = _parse_response(_extract_text_content(list_result))
-            assert len(tools) > 0
-
-            tool_name = tools[0]["method"].split(".", 1)[1]
-
-            # Get specific tool
-            result = await client.call_tool(
-                "describe",
-                arguments={"method": f"filesystem.{tool_name}"},
-            )
-
-        content = _extract_text_content(result)
-        tool_info = _parse_response(content)
-
-        assert "method" in tool_info
-        assert tool_info["method"] == f"filesystem.{tool_name}"
-        assert "description" in tool_info
-        assert "input_schema" in tool_info
-
-    async def test_describe_server_not_found(self) -> None:
-        """Test describe returns error for non-existent server."""
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": "nonexistent"})
-
-        content = _extract_text_content(result)
-        error_info = _parse_response(content)
-
-        assert "error" in error_info
-        assert "not found" in error_info["error"].lower()
-        assert "available_servers" in error_info
-
-    async def test_describe_tool_not_found(self) -> None:
-        """Test describe returns error for non-existent tool."""
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe",
-                arguments={"method": "filesystem.nonexistent"},
-            )
-
-        content = _extract_text_content(result)
-        error_info = _parse_response(content)
-
-        assert "error" in error_info
-        assert "not found" in error_info["error"].lower()
-        assert "available_tools" in error_info
-
-
 class TestCallAPI:
     """Tests for the call tool with method parameter."""
 
@@ -238,7 +119,7 @@ class TestCallAPI:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "call",
+                "invoke",
                 arguments={
                     "method": "filesystem.list_allowed_directories",
                     "arguments": {},
@@ -266,7 +147,7 @@ class TestCallAPI:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "call",
+                "invoke",
                 arguments={"method": "filesystem"},
             )
 
@@ -291,7 +172,7 @@ class TestCallAPI:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "call",
+                "invoke",
                 arguments={
                     "method": "nonexistent.tool",
                     "arguments": {},
@@ -319,7 +200,7 @@ class TestCallAPI:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "call",
+                "invoke",
                 arguments={
                     "method": "filesystem.nonexistent",
                     "arguments": {},
@@ -336,28 +217,6 @@ class TestCallAPI:
 class TestErrorHandling:
     """Tests for error handling with method parameter."""
 
-    async def test_empty_method_parameter_describe(self) -> None:
-        """Test describe handles empty method parameter."""
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": ""})
-
-        content = _extract_text_content(result)
-        error_info = _parse_response(content)
-
-        assert "error" in error_info
-        assert "not found" in error_info["error"].lower()
-
     async def test_empty_method_parameter_call(self) -> None:
         """Test call handles empty method parameter."""
         config = ProxyConfig(
@@ -372,38 +231,13 @@ class TestErrorHandling:
         mcp_server = create_server(config)
 
         async with Client(mcp_server) as client:
-            result = await client.call_tool("call", arguments={"method": ""})
+            result = await client.call_tool("invoke", arguments={"method": ""})
 
         content = _extract_text_content(result)
         error_info = _parse_response(content)
 
         assert "error" in error_info
         assert "invalid method format" in error_info["error"].lower()
-
-    async def test_method_with_trailing_dot(self) -> None:
-        """Test method parameter with trailing dot."""
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            # describe with trailing dot - should treat as server only
-            result = await client.call_tool("describe", arguments={"method": "filesystem."})
-
-        content = _extract_text_content(result)
-        # "filesystem." splits to ("filesystem", "")
-        # This should return tools for filesystem server
-        data = _parse_response(content)
-        if "error" not in data:
-            # If not an error, should be a list of tools
-            assert isinstance(data, list)
 
     async def test_multiple_dots_in_method(self) -> None:
         """Test method parameter with multiple dots."""
@@ -421,7 +255,7 @@ class TestErrorHandling:
         async with Client(mcp_server) as client:
             # "server.tool.extra" splits to ("server", "tool.extra")
             result = await client.call_tool(
-                "describe", arguments={"method": "filesystem.tool.extra"}
+                "invoke", arguments={"method": "filesystem.tool.extra", "arguments": {}}
             )
 
         content = _extract_text_content(result)
@@ -432,120 +266,3 @@ class TestErrorHandling:
         assert "not found" in error_info["error"].lower()
 
 
-class TestSchemaCompressionInDescribe:
-    """Tests for schema compression in describe API."""
-
-    async def test_describe_returns_compressed_schema(self) -> None:
-        """Test describe returns TypeScript compressed schema when enabled."""
-        tmp_dir = TMP_DIR
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
-                ),
-            },
-            schema_compression_enabled=True,
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": "filesystem"})
-
-        content = _extract_text_content(result)
-        tools = _parse_response(content)
-
-        assert isinstance(tools, list)
-        assert len(tools) > 0
-        # Check that input_schema is compressed (string format)
-        for tool in tools:
-            assert "input_schema" in tool
-            # Compressed schema is a string (TypeScript type)
-            assert isinstance(tool["input_schema"], str)
-
-    async def test_describe_returns_uncompressed_schema(self) -> None:
-        """Test describe returns JSON schema when compression disabled."""
-        tmp_dir = TMP_DIR
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
-                ),
-            },
-            schema_compression_enabled=False,
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": "filesystem"})
-
-        content = _extract_text_content(result)
-        tools = _parse_response(content)
-
-        assert isinstance(tools, list)
-        assert len(tools) > 0
-        # Check that input_schema is not compressed (dict format)
-        for tool in tools:
-            assert "input_schema" in tool
-            # Uncompressed schema is a dict (JSON Schema)
-            assert isinstance(tool["input_schema"], dict)
-
-
-class TestToonCompressionInDescribe:
-    """Tests for TOON compression in describe API."""
-
-    async def test_describe_with_toon_compression(self) -> None:
-        """Test describe returns TOON compressed content when enabled."""
-        tmp_dir = TMP_DIR
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
-                ),
-            },
-            toon_compression_enabled=True,
-            toon_compression_min_size=2,
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": "filesystem"})
-
-        content = _extract_text_content(result)
-        # TOON compressed content should be parseable by toons library
-        parsed = _parse_response(content)
-        assert isinstance(parsed, list)
-        assert len(parsed) > 0
-
-    async def test_describe_without_toon_compression(self) -> None:
-        """Test describe returns plain JSON when TOON disabled."""
-        tmp_dir = TMP_DIR
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", tmp_dir],
-                ),
-            },
-            toon_compression_enabled=False,
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": "filesystem"})
-
-        content = _extract_text_content(result)
-        # Should be plain JSON
-        parsed = json.loads(content)
-        assert isinstance(parsed, list)
-        assert len(parsed) > 0
