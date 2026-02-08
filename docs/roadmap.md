@@ -153,6 +153,13 @@
 - ✅ client_factory 模式
 - ✅ 202 个测试，74% 覆盖率
 
+### v0.5.0 - API 简化版本 ✅
+- ✅ 移除 describe 工具（功能合并到 invoke）
+- ✅ call 更名为 invoke
+- ✅ resources 更名为 read
+- ✅ 工具数量从 3 个减少到 2 个
+- ✅ 215 个测试，73% 覆盖率
+
 ### v0.1.4 - SSE 支持版本 ✅
 - ✅ SSE 传输自动检测（URL 包含 `/sse`）
 - ✅ `SSETransport` 支持
@@ -163,15 +170,15 @@
 - ✅ `port_utils.py` 模块（`find_available_port` 函数）
 - ✅ Claude Desktop 配置文档修正（使用 HTTP 类型）
 
-### v0.5.0 - 优化版本（规划）
+### v0.6.0 - 优化版本（规划）
 - [ ] 可观测性增强
 - [ ] 性能优化
 - [ ] 测试覆盖率提升到 85%+
 
-### v0.6.0 - 功能版本（规划）
+### v0.7.0 - 功能版本（规划）
 - [ ] 配置热加载
 - [ ] Web 管理界面
 
 ---
 
-*最后更新：2026-01-27（端口自动切换功能已完成）*
+*最后更新：2026-02-08（API 简化：describe 移除，call→invoke，resources→read）*

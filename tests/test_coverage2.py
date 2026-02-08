@@ -127,68 +127,6 @@ class TestCreateServerCoverage:
     """Tests for create_server edge cases."""
 
     @pytest.mark.asyncio
-    async def test_describe_with_unknown_server(self):
-        """Test: describe returns error for unknown server."""
-        from fastmcp import Client
-
-        from mcpx.__main__ import create_server
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool("describe", arguments={"method": "unknown"})
-
-        from tests.test_e2e import _extract_text_content, _parse_response
-
-        content = _extract_text_content(result)
-
-        error_info = _parse_response(content)
-        assert "error" in error_info
-        assert "unknown" in error_info["error"].lower()
-        assert "filesystem" in error_info["available_servers"]
-
-    @pytest.mark.asyncio
-    async def test_describe_with_unknown_tool(self):
-        """Test: describe returns error for unknown tool."""
-        from fastmcp import Client
-
-        from mcpx.__main__ import create_server
-
-        config = ProxyConfig(
-            mcpServers={
-                "filesystem": McpServerConfig(
-                    type="stdio",
-                    command="npx",
-                    args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-                ),
-            }
-        )
-        mcp_server = create_server(config)
-
-        async with Client(mcp_server) as client:
-            result = await client.call_tool(
-                "describe", arguments={"method": "filesystem.unknown_tool"}
-            )
-
-        from tests.test_e2e import _extract_text_content, _parse_response
-
-        content = _extract_text_content(result)
-
-        error_info = _parse_response(content)
-        assert "error" in error_info
-        assert "unknown_tool" in error_info["error"].lower()
-        assert "available_tools" in error_info
-
-    @pytest.mark.asyncio
     async def test_call_with_unknown_server(self):
         """Test: call returns error for unknown server."""
         from fastmcp import Client
@@ -200,7 +138,7 @@ class TestCreateServerCoverage:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "call",
+                "invoke",
                 arguments={
                     "method": "unknown.some_tool",
                     "arguments": {},

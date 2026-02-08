@@ -200,10 +200,9 @@ def create_server(
 ) -> FastMCP:
     """Create MCP server from configuration.
 
-    The server exposes three tools:
-    - describe: Get full schema of cached tools (with TOON compression support)
-    - call: Execute tools through long-lived connections (with TOON compression support)
-    - resources: List or read resources from MCP servers
+    The server exposes two tools:
+    - invoke: Execute tools through long-lived connections (with TOON compression support)
+    - read: Read resources from MCP servers
 
     Args:
         config: Proxy configuration
@@ -244,109 +243,6 @@ def create_server(
             return json_schema_to_typescript(input_schema, max_description_len=300)
         return input_schema
 
-    # Build the describe description
-    base_desc = 'Query tool information from MCP servers.\n\nExample: describe(method="filesystem.read_file")\n\n'
-    if tools_description:
-        full_desc = base_desc + tools_description
-    else:
-        full_desc = base_desc + "Tools will be listed after initialization."
-
-    @mcp.tool(description=full_desc)
-    async def describe(
-        method: str,
-    ) -> ToolResult | str:
-        """Query tool information from MCP servers.
-
-        Args:
-            method: Method identifier in "server" or "server.tool" format
-                - "server": List all tools from this server
-                - "server.tool": Get detailed schema for this tool
-
-        Returns:
-            ToolResult with:
-            - content: TOON 压缩后的数据（用于 AI 阅读）
-            - structured_content: 原始未压缩的 JSON 数据（用于程序解析）
-
-        Examples:
-            # List all tools from a server
-            describe(method="filesystem")
-
-            # Get details for a specific tool
-            describe(method="filesystem.read_file")
-        """
-        registry: Registry = mcp._registry  # type: ignore[attr-defined]
-        executor: Executor = mcp._executor  # type: ignore[attr-defined]
-
-        # Ensure registry is initialized
-        await registry.ensure_initialized()
-
-        def _build_result(data: Any) -> ToolResult:
-            """Build ToolResult with compressed content and optional structured_content."""
-            compressed, was_compressed = executor._compressor.compress(
-                data, min_size=config.toon_compression_min_size
-            )
-            if was_compressed and isinstance(compressed, str):
-                # content: 压缩后的 TOON 字符串
-                if config.include_structured_content:
-                    # structured_content: 原始未压缩数据
-                    return ToolResult(content=compressed, structured_content={"result": data})
-                # 仅返回压缩内容
-                return ToolResult(content=compressed)
-            # 未压缩
-            if config.include_structured_content:
-                return ToolResult(content=data, structured_content={"result": data})
-            return ToolResult(content=data)
-
-        # Parse method string
-        parts = method.split(".", 1)
-        server_name = parts[0]
-        tool_name = parts[1] if len(parts) > 1 else None
-
-        # Check if server exists
-        if not registry.has_server(server_name):
-            servers = registry.list_servers()
-            if servers:
-                error_data = {
-                    "error": f"Server '{server_name}' not found",
-                    "available_servers": servers,
-                }
-            else:
-                logger.warning(f"Server '{server_name}' not found - no MCP servers connected")
-                error_data = {
-                    "error": f"Server '{server_name}' not found",
-                    "hint": "No MCP servers are currently connected",
-                }
-            return json.dumps(error_data, ensure_ascii=False)
-
-        # Get specific tool
-        if tool_name:
-            tool = registry.get_tool(server_name, tool_name)
-            if tool is None:
-                available = [t.name for t in registry.list_tools(server_name)]
-                error_data = {
-                    "error": f"Tool '{tool_name}' not found on server '{server_name}'",
-                    "available_tools": available,
-                }
-                return json.dumps(error_data, ensure_ascii=False)
-            tool_data = {
-                "method": f"{tool.server_name}.{tool.name}",
-                "description": tool.description,
-                "input_schema": _maybe_compress_schema(tool.input_schema),
-            }
-            return _build_result(tool_data)
-
-        # List all tools from the server
-        tools = registry.list_tools(server_name)
-        tools_data = [
-            {
-                "method": f"{t.server_name}.{t.name}",
-                "description": t.description,
-                "input_schema": _maybe_compress_schema(t.input_schema),
-            }
-            for t in tools
-        ]
-        return _build_result(tools_data)
-
     def _validate_arguments(
         arguments: dict[str, object] | None,
         input_schema: dict[str, object],
@@ -379,8 +275,8 @@ def create_server(
 
         return None
 
-    @mcp.tool
-    async def call(
+    @mcp.tool(description=tools_description)
+    async def invoke(
         method: str,
         arguments: dict[str, object] | None = None,
     ) -> (
@@ -391,14 +287,20 @@ def create_server(
         | EmbeddedResource
         | list[TextContent | ImageContent | EmbeddedResource]
     ):
-        """Execute an MCP tool.
+        """Invoke an MCP tool.
 
         Args:
             method: Method identifier in "server.tool" format
-            arguments: Tool arguments (use describe to get schema)
+            arguments: Tool arguments
 
         Example:
-            call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
+            invoke(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
+
+        Error Handling:
+            When invoke fails, it returns helpful information:
+            - Server not found: returns error + available_servers list
+            - Tool not found: returns error + available_tools list
+            - Invalid arguments: returns error + tool_schema
         """
         executor: Executor = mcp._executor  # type: ignore[attr-defined]
 
@@ -485,15 +387,15 @@ def create_server(
         exec_error_data = {"error": result.error}
         return json.dumps(exec_error_data, ensure_ascii=False)
 
-    # Build the resources description
-    base_resources_desc = 'Read MCP server resources.\n\nExample: resources(server_name="filesystem", uri="file:///tmp/file.txt")\n\n'
+    # Build the read description
+    base_read_desc = 'Read MCP server resources.\n\nExample: read(server_name="filesystem", uri="file:///tmp/file.txt")\n\n'
     if resources_description:
-        full_resources_desc = base_resources_desc + resources_description
+        full_read_desc = base_read_desc + resources_description
     else:
-        full_resources_desc = base_resources_desc + "Resources will be listed after initialization."
+        full_read_desc = base_read_desc + "Resources will be listed after initialization."
 
-    @mcp.tool(description=full_resources_desc)
-    async def resources(
+    @mcp.tool(description=full_read_desc)
+    async def read(
         server_name: str,
         uri: str,
     ) -> Any:
@@ -510,7 +412,7 @@ def create_server(
 
         Examples:
             # Read a specific resource
-            resources(server_name="filesystem", uri="file:///tmp/file.txt")
+            read(server_name="filesystem", uri="file:///tmp/file.txt")
         """
         registry: Registry = mcp._registry  # type: ignore[attr-defined]
 
