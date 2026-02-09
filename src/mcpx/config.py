@@ -34,6 +34,9 @@ class McpServerConfig(BaseModel):
     url: str | None = None
     headers: dict[str, str] | None = None
 
+    # enabled state for dashboard
+    enabled: bool = True
+
     def validate_for_server(self, server_name: str) -> None:
         """Validate that required fields are present based on type.
 
@@ -75,5 +78,8 @@ class ProxyConfig(BaseModel):
     # Structured content configuration
     # If False, tools return only content (without structured_content)
     include_structured_content: bool = False
+
+    # Dashboard configuration
+    disabled_tools: list[str] = Field(default_factory=list)  # format: "server.tool"
 
     model_config = {"extra": "ignore"}

@@ -26,6 +26,12 @@ uv run mcpx-toolkit config.json
 
 # 指定端口和主机
 uv run mcpx-toolkit --port 3000 --host 127.0.0.1 config.json
+
+# Dashboard 模式（启用 Web 界面）
+uv run mcpx-toolkit --gui --open config.json
+
+# Desktop 模式（原生窗口）
+uv run mcpx-toolkit --gui --desktop config.json
 ```
 
 ## 开发流程
@@ -90,20 +96,24 @@ uv run mcpx-toolkit --port 3000 --host 127.0.0.1 config.json
 
 ```
 src/mcpx/
-├── __init__.py      # 导出公共 API
-├── __main__.py      # 入口、invoke/read 工具定义（大幅简化）
-├── server.py        # ServerManager 核心类（合并 Registry + Executor）
-├── pool.py          # ConnectionPool 连接池实现
-├── config.py        # ProxyConfig、McpServerConfig 配置模型
-├── description.py   # 工具/资源描述生成
-├── errors.py        # 统一错误类型
-├── compression.py   # ToonCompressor：TOON 压缩实现
-├── schema_ts.py     # json_schema_to_typescript：Schema 压缩
-├── content.py       # 多模态内容处理（TextContent/ImageContent/EmbeddedResource）
-├── health.py        # HealthChecker：健康检查和重连
-├── port_utils.py    # find_available_port：端口可用性检测和自动切换
-├── registry.py      # （已弃用，保留向后兼容）
-└── executor.py      # （已弃用，保留向后兼容）
+├── __init__.py          # 导出公共 API
+├── __main__.py          # 入口、invoke/read 工具定义（大幅简化）
+├── server.py            # ServerManager 核心类（合并 Registry + Executor）
+├── pool.py              # ConnectionPool 连接池实现
+├── config.py            # ProxyConfig、McpServerConfig 配置模型
+├── config_manager.py    # ConfigManager：配置管理器（支持增量启停）
+├── description.py       # 工具/资源描述生成
+├── errors.py            # 统一错误类型
+├── compression.py       # ToonCompressor：TOON 压缩实现
+├── schema_ts.py         # json_schema_to_typescript：Schema 压缩
+├── content.py           # 多模态内容处理（TextContent/ImageContent/EmbeddedResource）
+├── health.py            # HealthChecker：健康检查和重连
+├── port_utils.py        # find_available_port：端口可用性检测和自动切换
+├── registry.py          # （已弃用，保留向后兼容）
+├── executor.py          # （已弃用，保留向后兼容）
+└── web/                 # Dashboard Web 界面
+    ├── __init__.py      # DashboardApp、SpaStaticFiles
+    └── api.py           # REST API 14 个端点
 ```
 
 ## 核心架构
@@ -222,6 +232,36 @@ invoke(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
 - 启动日志会显示实际使用的端口
 - 实现位于 `port_utils.py` 模块
 
+### 8. Web Dashboard
+
+MCPX 提供 Web Dashboard 用于直观管理服务器、工具和资源：
+
+**架构**：
+```
+Starlette App
+├── /mcp     - MCP 协议端点
+├── /api     - REST API (14 个端点)
+└── /        - React SPA Dashboard
+```
+
+**REST API 端点**：
+- `GET /servers` - 列出所有服务器
+- `POST /servers/{name}/toggle` - 启停服务器（增量操作）
+- `GET /tools` - 列出所有工具
+- `POST /tools/{server}/{tool}/toggle` - 启停工具
+- `GET /resources` - 列出所有资源
+- `GET /health` - 健康总览
+- `PUT /config` - 保存配置并热重载
+
+**CLI 参数**：
+- `--gui` - 启用 Dashboard
+- `--open` - 启动后打开浏览器
+- `--desktop` - 使用 pywebview 创建原生窗口
+
+**前端技术栈**：React 19 + TypeScript + Vite + Tailwind CSS v4
+- 构建产物输出到 `src/mcpx/web/static/`
+- Python 后端直接服务静态文件，无需 Node.js 运行时
+
 ## 配置
 
 MCPX 使用 Claude Code 兼容的配置格式：
@@ -258,6 +298,8 @@ MCPX 使用 Claude Code 兼容的配置格式：
   - `env`: 环境变量字典（可选）
   - `url`: http 类型的 URL（支持 SSE 和 Streamable HTTP）
   - `headers`: HTTP 请求头（可选）
+  - `enabled`: 是否启用该服务器（默认 `true`，Dashboard 可修改）
+- `disabled_tools`: 禁用的工具列表，格式为 `["server.tool"]`（Dashboard 管理）
 
 ## 测试要求
 

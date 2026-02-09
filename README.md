@@ -331,6 +331,41 @@ read(server_name="filesystem", uri="file:///tmp/file.txt")
 
 ---
 
+## Web Dashboard
+
+MCPX 提供 Web Dashboard 用于直观管理 MCP 服务器、工具和资源。
+
+### 启动 Dashboard
+
+```bash
+# Dashboard 模式（启用 Web 界面）
+mcpx-toolkit --gui --open config.json
+
+# Desktop 模式（原生窗口，需要 pywebview）
+mcpx-toolkit --gui --desktop config.json
+```
+
+### Dashboard 功能
+
+| 页面 | 功能 |
+|------|------|
+| **Dashboard** | 总览所有服务器状态、工具和资源数量 |
+| **Servers** | 查看服务器详情，启用/禁用服务器（增量操作） |
+| **Tools** | 浏览和搜索工具，启用/禁用单个工具 |
+| **Resources** | 浏览资源，点击预览内容 |
+| **Health** | 查看健康状态，手动触发健康检查 |
+| **Settings** | 修改配置并热重载 |
+
+### CLI 参数
+
+| 参数 | 说明 |
+|------|------|
+| `--gui` | 启用 Web Dashboard |
+| `--open` | 启动后自动打开浏览器 |
+| `--desktop` | 使用 pywebview 创建原生窗口（需要安装 `pywebview`） |
+
+---
+
 ## 核心特性
 
 | 特性 | 说明 |
@@ -342,6 +377,7 @@ read(server_name="filesystem", uri="file:///tmp/file.txt")
 | **连接池** | 连接复用提升性能，自动管理连接生命周期 |
 | **健康检查** | 后台定期探测服务器状态 |
 | **多模态** | 透传图片、资源等非文本内容 |
+| **Web Dashboard** | 浏览器管理服务器、工具和资源（增量启停） |
 
 ### Schema 压缩示例
 
@@ -465,6 +501,7 @@ Claude Desktop
 - E2E 测试 73% 覆盖率
 - GitHub Actions 自动发布到 PyPI
 - **v0.4.0**: ServerManager 合并 Registry + Executor，连接池提升性能
+- **v0.5.0**: Web Dashboard - 浏览器管理服务器、工具和资源
 
 ### 📋 待办（P1 高优先级）
 - （暂无高优先级待办）

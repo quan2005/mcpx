@@ -14,6 +14,7 @@ from fastmcp.tools.tool import ToolResult
 from mcp.types import EmbeddedResource, ImageContent, TextContent
 
 from mcpx.config import McpServerConfig, ProxyConfig
+from mcpx.config_manager import ConfigManager
 from mcpx.description import generate_tools_description
 from mcpx.errors import MCPXError, ValidationError
 from mcpx.port_utils import find_available_port
@@ -271,8 +272,21 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on")
     parser.add_argument("config", nargs="?", default=None, help="Path to config.json")
+    parser.add_argument("--gui", action="store_true", help="Enable web dashboard")
+    parser.add_argument(
+        "--open", action="store_true", help="Open browser on startup (implies --gui)"
+    )
+    parser.add_argument(
+        "--desktop",
+        action="store_true",
+        help="Run in desktop window (implies --gui, requires pywebview)",
+    )
 
     args = parser.parse_args()
+
+    # --open and --desktop imply --gui
+    if args.open or args.desktop:
+        args.gui = True
 
     # Load config
     if args.config:
@@ -280,11 +294,19 @@ def main() -> None:
     else:
         config_path = Path(__file__).parent.parent.parent / "config.json"
 
-    config = load_config(config_path)
+    # Create config manager
+    config_manager = ConfigManager.from_file(config_path)
+
+    # Load config
+    import asyncio
+
+    asyncio.run(config_manager.load())
+
+    config = config_manager.config
     logger.info(f"Loaded {len(config.mcpServers)} server(s) from {config_path}")
 
-    # Create and initialize manager once
-    manager = ServerManager(config)
+    # Create and initialize manager with config manager
+    manager = ServerManager(config_manager)
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
@@ -335,10 +357,23 @@ def main() -> None:
             async with lifespan(app):
                 yield
 
+    # Create routes based on GUI mode
+    if args.gui:
+        from mcpx.web import create_dashboard_app
+
+        dashboard = create_dashboard_app(manager, config_manager)
+        routes = [
+            Mount("/api", app=dashboard.api),
+            Mount("/mcp", app=mcp_app),
+            Mount("/", app=dashboard.static),
+        ]
+    else:
+        routes = [Mount("/", app=mcp_app)]
+
     # Create Starlette app
     app = Starlette(
         lifespan=combined_lifespan,
-        routes=[Mount("/", app=mcp_app)],
+        routes=routes,
     )
 
     # Find available port
@@ -348,12 +383,85 @@ def main() -> None:
 
     logger.info(f"Starting HTTP server on {args.host}:{actual_port}")
     logger.info(f"MCP endpoint: http://{args.host}:{actual_port}/mcp/")
+    if args.gui:
+        logger.info(f"Dashboard: http://{args.host}:{actual_port}/")
     logger.info("")
     logger.info("Thanks for using mcpx-toolkit!")
     logger.info("https://github.com/quan2005/mcpx")
     logger.info("")
 
-    uvicorn.run(app, host=args.host, port=actual_port)
+    # Handle different startup modes
+    if args.desktop:
+        # Desktop mode: run in pywebview
+        _run_desktop_mode(app, args.host, actual_port)
+    elif args.open:
+        # Browser mode: open browser and run server
+        _run_browser_mode(app, args.host, actual_port)
+    else:
+        # Normal mode: just run server
+        uvicorn.run(app, host=args.host, port=actual_port)
+
+
+def _run_browser_mode(app: Any, host: str, port: int) -> None:
+    """Run server and open browser."""
+    import threading
+    import time
+    import webbrowser
+
+    import uvicorn
+
+    # Start server in background thread
+    def run_server() -> None:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+
+    # Wait for server to start
+    time.sleep(1)
+
+    # Open browser
+    url = f"http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}/"
+    logger.info(f"Opening browser: {url}")
+    webbrowser.open(url)
+
+    # Keep main thread alive
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+
+
+def _run_desktop_mode(app: Any, host: str, port: int) -> None:
+    """Run server in desktop window using pywebview."""
+    import threading
+    import time
+
+    import uvicorn
+
+    try:
+        import webview
+    except ImportError:
+        logger.error("pywebview not installed. Install with: uv pip install pywebview")
+        sys.exit(1)
+
+    # Start server in background thread
+    def run_server() -> None:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+
+    # Wait for server to start
+    time.sleep(1)
+
+    # Create desktop window
+    url = f"http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}/"
+    logger.info(f"Opening desktop window: {url}")
+
+    webview.create_window("MCPX Dashboard", url, width=1400, height=900)
+    webview.start()
 
 
 if __name__ == "__main__":

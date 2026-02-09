@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from mcpx.compression import ToonCompressor
 from mcpx.config import McpServerConfig, ProxyConfig
+from mcpx.config_manager import ConfigManager
 from mcpx.content import is_multimodal_content
 from mcpx.errors import (
     ExecutionError,
@@ -83,15 +84,22 @@ class ServerManager:
     """管理所有 MCP 服务器连接。
 
     使用连接池实现连接复用，合并 Registry 和 Executor 功能。
+    支持增量启停服务器。
     """
 
-    def __init__(self, config: ProxyConfig) -> None:
+    def __init__(self, config_or_manager: ProxyConfig | ConfigManager) -> None:
         """初始化服务器管理器。
 
         Args:
-            config: 代理配置
+            config_or_manager: 代理配置或配置管理器
         """
-        self._config = config
+        if isinstance(config_or_manager, ConfigManager):
+            self._config_manager: ConfigManager | None = config_or_manager
+            self._config = config_or_manager.config
+        else:
+            self._config_manager = None
+            self._config = config_or_manager
+
         self._pools: dict[str, ConnectionPool] = {}
         self._tools: dict[str, ToolInfo] = {}
         self._resources: dict[str, ResourceInfo] = {}
@@ -100,15 +108,15 @@ class ServerManager:
 
         # 初始化 TOON 压缩器
         self._compressor = ToonCompressor(
-            enabled=config.toon_compression_enabled,
-            min_size=config.toon_compression_min_size,
+            enabled=self._config.toon_compression_enabled,
+            min_size=self._config.toon_compression_min_size,
         )
 
         # 初始化健康检查器
         self._health_checker = HealthChecker(
-            check_interval=config.health_check_interval,
-            check_timeout=config.health_check_timeout,
-            failure_threshold=config.health_check_failure_threshold,
+            check_interval=self._config.health_check_interval,
+            check_timeout=self._config.health_check_timeout,
+            failure_threshold=self._config.health_check_failure_threshold,
         )
         self._health_checker.set_session_callback(self._get_client_for_health_check)
 
@@ -167,6 +175,11 @@ class ServerManager:
             return
 
         for server_name, server_config in self._config.mcpServers.items():
+            # 跳过禁用的服务器
+            if not server_config.enabled:
+                logger.info(f"Server '{server_name}' is disabled, skipping")
+                continue
+
             try:
                 # 验证配置
                 server_config.validate_for_server(server_name)
@@ -244,6 +257,196 @@ class ServerManager:
             server_names = list(self._pools.keys())
             await self._health_checker.start(server_names)
             logger.info(f"Health checker started for {len(server_names)} server(s)")
+
+    async def connect_server(self, name: str) -> bool:
+        """增量启用并连接单个服务器。
+
+        Args:
+            name: 服务器名称
+
+        Returns:
+            是否成功连接
+        """
+        if name in self._pools:
+            logger.warning(f"Server '{name}' already connected")
+            return True
+
+        server_config = self._config.mcpServers.get(name)
+        if server_config is None:
+            logger.error(f"Server '{name}' not found in config")
+            return False
+
+        # 如果服务器被禁用，不连接
+        if not server_config.enabled:
+            logger.info(f"Server '{name}' is disabled, skipping")
+            return False
+
+        try:
+            # 验证配置
+            server_config.validate_for_server(name)
+
+            # 创建客户端工厂
+            factory = self._create_client_factory(server_config)
+
+            # 创建连接池
+            pool = ConnectionPool(
+                factory=factory,
+                max_size=10,
+                name=name,
+            )
+
+            # 预热连接并获取工具/资源列表
+            async with pool.acquire() as client:
+                # 缓存服务器信息
+                init_result = client.initialize_result
+                if init_result and init_result.serverInfo:
+                    self._server_infos[name] = ServerInfo(
+                        name=name,
+                        server_name=init_result.serverInfo.name or name,
+                        version=init_result.serverInfo.version or "unknown",
+                        instructions=init_result.instructions,
+                    )
+                else:
+                    self._server_infos[name] = ServerInfo(
+                        name=name,
+                        server_name=name,
+                        version="unknown",
+                        instructions=None,
+                    )
+
+                # 获取并缓存工具列表
+                tools = await client.list_tools()
+                logger.info(f"Server '{name}' has {len(tools)} tool(s)")
+
+                for tool in tools:
+                    tool_key = f"{name}:{tool.name}"
+                    self._tools[tool_key] = ToolInfo(
+                        server_name=name,
+                        name=tool.name,
+                        description=tool.description or "",
+                        input_schema=tool.inputSchema or {},
+                    )
+
+                # 获取并缓存资源列表
+                try:
+                    resources = await client.list_resources()
+                    logger.info(f"Server '{name}' has {len(resources)} resource(s)")
+
+                    for resource in resources:
+                        resource_key = f"{name}:{resource.uri}"
+                        self._resources[resource_key] = ResourceInfo(
+                            server_name=name,
+                            uri=str(resource.uri),
+                            name=resource.name,
+                            description=resource.description,
+                            mime_type=resource.mimeType,
+                            size=resource.size,
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to list resources from '{name}': {e}")
+
+            # 保存连接池
+            self._pools[name] = pool
+
+            # 添加到健康检查器
+            self._health_checker.add_server(name)
+
+            logger.info(f"Successfully connected to server '{name}'")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to server '{name}': {e}")
+            return False
+
+    async def disconnect_server(self, name: str) -> bool:
+        """增量禁用并断开单个服务器。
+
+        Args:
+            name: 服务器名称
+
+        Returns:
+            是否成功断开
+        """
+        if name not in self._pools:
+            logger.warning(f"Server '{name}' not connected")
+            return False
+
+        try:
+            # 从健康检查器移除
+            self._health_checker.remove_server(name)
+
+            # 关闭连接池
+            pool = self._pools.pop(name)
+            await pool.close()
+
+            # 清理工具缓存
+            tools_to_remove = [key for key in self._tools.keys() if key.startswith(f"{name}:")]
+            for key in tools_to_remove:
+                del self._tools[key]
+
+            # 清理资源缓存
+            resources_to_remove = [
+                key for key in self._resources.keys() if key.startswith(f"{name}:")
+            ]
+            for key in resources_to_remove:
+                del self._resources[key]
+
+            # 清理服务器信息
+            if name in self._server_infos:
+                del self._server_infos[name]
+
+            logger.info(f"Successfully disconnected from server '{name}'")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to disconnect from server '{name}': {e}")
+            return False
+
+    async def reload(self) -> None:
+        """全量重载：关闭所有连接并重新初始化。"""
+        await self.close()
+        await self.initialize()
+        logger.info("Server manager reloaded")
+
+    def is_tool_enabled(self, server_name: str, tool_name: str) -> bool:
+        """检查工具是否启用。
+
+        Args:
+            server_name: 服务器名称
+            tool_name: 工具名称
+
+        Returns:
+            是否启用
+        """
+        if self._config_manager:
+            return self._config_manager.is_tool_enabled(server_name, tool_name)
+        # 如果没有配置管理器，检查本地配置
+        tool_key = f"{server_name}.{tool_name}"
+        return tool_key not in self._config.disabled_tools
+
+    def set_tool_enabled(self, server_name: str, tool_name: str, enabled: bool) -> None:
+        """设置工具启用状态。
+
+        Args:
+            server_name: 服务器名称
+            tool_name: 工具名称
+            enabled: 是否启用
+        """
+        if self._config_manager:
+            self._config_manager.set_tool_enabled(server_name, tool_name, enabled)
+        else:
+            tool_key = f"{server_name}.{tool_name}"
+            if enabled:
+                if tool_key in self._config.disabled_tools:
+                    self._config.disabled_tools.remove(tool_key)
+            else:
+                if tool_key not in self._config.disabled_tools:
+                    self._config.disabled_tools.append(tool_key)
+
+    @property
+    def config_manager(self) -> ConfigManager | None:
+        """获取配置管理器。"""
+        return self._config_manager
 
     async def call(
         self, server_name: str, tool_name: str, arguments: dict[str, Any]

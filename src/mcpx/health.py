@@ -267,3 +267,24 @@ class HealthChecker:
         """Check if a specific server is healthy."""
         server = self.get_server_health(server_name)
         return server is not None and server.status == "healthy"
+
+    def add_server(self, name: str) -> None:
+        """添加服务器到健康监控列表。
+
+        Args:
+            name: 服务器名称
+        """
+        if name not in self._status.servers:
+            self._status.servers[name] = ServerHealth(server_name=name, status="unknown")
+            logger.debug(f"Added server '{name}' to health monitoring")
+
+    def remove_server(self, name: str) -> None:
+        """从健康监控列表移除服务器。
+
+        Args:
+            name: 服务器名称
+        """
+        if name in self._status.servers:
+            del self._status.servers[name]
+            self._status._recalculate()
+            logger.debug(f"Removed server '{name}' from health monitoring")

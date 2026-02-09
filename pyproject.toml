@@ -18,6 +18,7 @@ dev = [
     "ruff>=0.14.0",
     "mypy>=1.19.0",
 ]
+gui = ["pywebview>=5.0"]
 
 [project.scripts]
 mcpx-toolkit = "mcpx.__main__:main"
@@ -48,6 +49,10 @@ warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = "toons"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "webview"
 ignore_missing_imports = true
 
 [dependency-groups]
