@@ -11,7 +11,6 @@ import pytest
 from fastmcp import Client
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig, create_server, load_config
-from mcpx.registry import Registry, ToolInfo
 
 
 def _parse_response(content: str) -> Any:
@@ -179,15 +178,17 @@ def _extract_text_content(result) -> str:
 
 async def test_call_validation_returns_tool_schema():
     """Test: call returns tool schema on argument validation error."""
+    from mcpx.server import ServerManager, ToolInfo
+
     config = ProxyConfig()
-    registry = Registry(config)
-    registry._initialized = True
+    manager = ServerManager(config)
+    manager._initialized = True
 
-    # Add a dummy client factory
-    def dummy_factory():
-        return object()
+    # Add a dummy pool
+    class DummyPool:
+        pass
 
-    registry._client_factories["dummy"] = dummy_factory
+    manager._pools["dummy"] = DummyPool()
 
     tool_schema = {
         "type": "object",
@@ -197,14 +198,14 @@ async def test_call_validation_returns_tool_schema():
         },
         "required": ["path"],
     }
-    registry._tools["dummy:read_file"] = ToolInfo(
+    manager._tools["dummy:read_file"] = ToolInfo(
         server_name="dummy",
         name="read_file",
         description="Read file content",
         input_schema=tool_schema,
     )
 
-    mcp_server = create_server(config, registry=registry)
+    mcp_server = create_server(config, manager=manager)
 
     async with Client(mcp_server) as client:
         result = await client.call_tool(

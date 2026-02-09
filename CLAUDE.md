@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 核心目标
 
-MCP 代理服务器，将多个 MCP 服务器聚合为 `describe`、`call` 和 `resources` 三个工具，AI 按需查询工具/资源、执行工具和读取资源，减少初始上下文。
+MCP 代理服务器，将多个 MCP 服务器聚合为 `invoke` 和 `read` 两个工具，AI 按需执行工具和读取资源，减少初始上下文。
 
 ## 常用命令
 
@@ -90,42 +90,48 @@ uv run mcpx-toolkit --port 3000 --host 127.0.0.1 config.json
 
 ```
 src/mcpx/
-├── __main__.py    # 入口、describe/call/resources 工具定义
-├── config.py      # ProxyConfig、McpServerConfig 配置模型
-├── registry.py    # Registry 类：连接管理、工具/资源缓存、健康检查
-├── executor.py    # Executor 类：工具执行、TOON 压缩
-├── compression.py # ToonCompressor：TOON 压缩实现
-├── schema_ts.py   # json_schema_to_typescript：Schema 压缩
-├── content.py     # 多模态内容处理（TextContent/ImageContent/EmbeddedResource）
-├── health.py      # HealthChecker：健康检查和重连
-└── port_utils.py  # find_available_port：端口可用性检测和自动切换
+├── __init__.py      # 导出公共 API
+├── __main__.py      # 入口、invoke/read 工具定义（大幅简化）
+├── server.py        # ServerManager 核心类（合并 Registry + Executor）
+├── pool.py          # ConnectionPool 连接池实现
+├── config.py        # ProxyConfig、McpServerConfig 配置模型
+├── description.py   # 工具/资源描述生成
+├── errors.py        # 统一错误类型
+├── compression.py   # ToonCompressor：TOON 压缩实现
+├── schema_ts.py     # json_schema_to_typescript：Schema 压缩
+├── content.py       # 多模态内容处理（TextContent/ImageContent/EmbeddedResource）
+├── health.py        # HealthChecker：健康检查和重连
+├── port_utils.py    # find_available_port：端口可用性检测和自动切换
+├── registry.py      # （已弃用，保留向后兼容）
+└── executor.py      # （已弃用，保留向后兼容）
 ```
 
 ## 核心架构
 
 ### 设计模式
 
-MCPX 将多个 MCP 服务器的工具和资源收敛为三个入口点：
-- **describe**: 查询工具列表和 Schema（按需获取详情），使用 method 参数（如 "server" 或 "server.tool"）
-- **call**: 执行工具（使用 method 参数，格式为 "server.tool"），使用 client_factory 每次创建新会话
-- **resources**: 列出或读取 MCP 服务器的资源（支持文本和二进制内容）
+MCPX 将多个 MCP 服务器的工具和资源收敛为两个入口点：
+- **invoke**: 执行工具（使用 method 参数，格式为 "server.tool"），出错时返回可用服务器/工具/schema
+- **read**: 读取 MCP 服务器的资源（支持文本和二进制内容）
 
-### 三大核心类
+工具列表和资源列表在服务器启动时生成描述文本，作为 tool description 暴露给 AI，无需额外的 describe 工具。
 
-**Registry（注册表）**
-- 启动时连接所有 MCP 服务器（stdio 或 HTTP/SSE）获取工具/资源 Schema
-- 使用 FastMCP 的 **client_factory 模式**（Session Isolation）
-- 维护 client factory `_client_factories: dict[str, Callable[[], McpClient]]`
+### 核心类
+
+**ServerManager（服务器管理器）**
+- 合并了原来的 Registry 和 Executor 功能
+- 使用 **ConnectionPool 连接池**替代 Session Isolation，提升性能
+- 启动时连接所有 MCP 服务器获取工具/资源 Schema
 - 缓存工具 Schema `_tools: dict[str, ToolInfo]`
 - 缓存资源信息 `_resources: dict[str, ResourceInfo]`
 - 缓存服务器信息 `_server_infos: dict[str, ServerInfo]`
-- 集成健康检查 `HealthChecker`（使用临时会话）
+- 集成健康检查 `HealthChecker`
 
-**Executor（执行器）**
-- 每次请求通过 `client_factory()` 创建新会话
-- 使用 `async with client:` 自动管理会话生命周期
-- TOON 压缩响应数据
-- 多模态内容透传（图片/资源）
+**ConnectionPool（连接池）**
+- 管理每个服务器的 MCP 客户端连接
+- 连接复用，减少频繁创建/销毁连接的开销
+- 自动连接上限管理和回收
+- 使用 `async with pool.acquire() as client:` 模式
 
 **ToonCompressor（压缩器）**
 - 将 JSON 数据压缩为 TOON 格式
@@ -135,82 +141,78 @@ MCPX 将多个 MCP 服务器的工具和资源收敛为三个入口点：
 ### 数据流
 
 ```
-AI → describe(method="server.tool") → Registry._tools (缓存) → 压缩的 Schema
-AI → call(method="server.tool", arguments={...}) → Executor → client_factory() → 临时会话 → MCP Server → TOON 压缩结果
-AI → resources → Registry._resources (缓存) / read_resource() → 资源列表或内容
+AI → invoke(method="server.tool", arguments={...}) → ServerManager → pool.acquire() → MCP Server → TOON 压缩结果
+AI → read(server_name, uri) → ServerManager._resources (缓存) / read_resource() → 资源内容
 ```
 
-### Session Isolation 模式
+### 连接池模式
 
-使用 FastMCP 的 client_factory 模式实现会话隔离：
+使用连接池替代原来的 Session Isolation：
 
 ```python
-# Registry 初始化时创建 factory
+# ServerManager 初始化时创建连接池
 for server_name, server_config in self._config.mcpServers.items():
     factory = self._create_client_factory(server_config)
-    self._client_factories[server_name] = factory
+    pool = ConnectionPool(factory, max_size=10, name=server_name)
+    self._pools[server_name] = pool
 
-# Executor 每次请求创建新会话
-factory = self._registry.get_client_factory(server_name)
-client = factory()
-async with client:
+# 每次请求从池中获取连接
+async with self._pools[server_name].acquire() as client:
     result = await client.call_tool(tool_name, arguments)
-# 会话自动关闭
+# 连接自动归还到池中
 ```
 
 ## 关键实现细节
 
-### 1. describe/call method 参数格式
+### 1. invoke method 参数格式
 
-使用 `method` 参数指定目标工具，格式为 `server.tool` 或仅 `server`：
+使用 `method` 参数指定目标工具，格式为 `server.tool`：
 
 ```python
-# 查询服务器所有工具
-describe(method="filesystem")          # 列出 filesystem 服务器的所有工具
-
-# 查询特定工具的 schema
-describe(method="filesystem.read_file")  # 获取 read_file 工具的详细 schema
-
 # 执行工具
-call(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
+invoke(method="filesystem.read_file", arguments={"path": "/tmp/file.txt"})
 ```
+
+**错误处理**：当调用失败时，`invoke` 会返回有用的信息：
+- 服务器不存在：返回 `error` + `available_servers` 列表（如果没有服务器则返回 `hint`）
+- 工具不存在：返回 `error` + `available_tools` 列表
+- 参数无效：返回 `error` + `tool_schema`
 
 ### 2. 双返回格式
 
-`describe` 和 `call` 都返回 `ToolResult`，包含：
+`invoke` 返回 `ToolResult`，包含：
 - `content`: TOON 压缩后的字符串（供 AI 阅读）
 - `structured_content`: 原始 JSON（供程序解析）
 
 ### 3. 多模态内容透传
 
-`call` 返回类型支持多种内容：
+`invoke` 返回类型支持多种内容：
 - `ToolResult`: 普通数据（压缩 + 原始）
 - `TextContent | ImageContent | EmbeddedResource`: 单项多模态内容
 - `list[TextContent | ImageContent | EmbeddedResource]`: 多项多模态内容
 
-透传逻辑在 `Executor._extract_result_data()`。
+透传逻辑在 `ServerManager._extract_result_data()`。
 
 ### 4. HTTP/SSE 模式的事件循环
 
-`main()` 需要特殊处理：
-- 在临时 asyncio.run() 中预连接获取工具描述
-- 在 uvicorn lifespan 中重新初始化 Registry
-- 避免跨事件循环的连接问题
+`main()` 简化为单一初始化：
+- 创建 ServerManager 在 lifespan 中初始化
+- 避免双重初始化和跨事件循环问题
 
 ### 5. 参数校验
 
-`call` 执行前校验：
+`invoke` 执行前校验：
 - 必填字段（`required`）
 - 未知参数（不在 `properties` 中）
 
 ### 6. 健康检查
 
 `HealthChecker` 在后台定期探测服务器健康状态：
-- 使用临时会话（通过 `client_factory()` 创建）
-- 使用 `async with client:` 自动管理会话生命周期
+- 使用临时会话进行健康检查
 - 检查完成后自动关闭临时会话
 - 失败阈值达到后标记服务器不健康
 - 提供 `get_server_health()` 查询状态
+- **已修复**: `_health_check_loop` 真正执行定期检查
 
 ### 7. 端口自动切换
 

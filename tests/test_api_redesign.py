@@ -264,5 +264,3 @@ class TestErrorHandling:
         # Should return error for tool not found
         assert "error" in error_info
         assert "not found" in error_info["error"].lower()
-
-

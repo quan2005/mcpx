@@ -339,7 +339,7 @@ read(server_name="filesystem", uri="file:///tmp/file.txt")
 | **多传输** | stdio / Streamable HTTP / SSE（自动检测） |
 | **Schema 压缩** | JSON Schema → TypeScript 类型，节省 token |
 | **TOON 压缩** | 响应数据双格式：`content`（压缩）/ `structured_content`（原始） |
-| **会话隔离** | 每次请求创建新会话，避免状态污染 |
+| **连接池** | 连接复用提升性能，自动管理连接生命周期 |
 | **健康检查** | 后台定期探测服务器状态 |
 | **多模态** | 透传图片、资源等非文本内容 |
 
@@ -437,7 +437,7 @@ Claude Desktop
    ├── invoke (执行工具，出错时返回 schema)
    └── read (读取资源)
        ↓
-   Schema 缓存 + 连接池 + 健康检查
+   连接池 + Schema 缓存 + 健康检查
        ↓
    Server 1 · Server 2 · Server N
 ```
@@ -446,8 +446,8 @@ Claude Desktop
 
 | 组件 | 职责 |
 |------|------|
-| **Registry** | 连接管理、工具/资源缓存、健康检查 |
-| **Executor** | 工具执行、TOON 压缩、会话隔离 |
+| **ServerManager** | 连接池管理、工具/资源缓存、健康检查、工具执行 |
+| **ConnectionPool** | MCP 连接池，连接复用提升性能 |
 | **ToonCompressor** | TOON 压缩实现 |
 | **HealthChecker** | 后台健康检查和重连 |
 
@@ -456,14 +456,15 @@ Claude Desktop
 ## 路线图
 
 ### ✅ 已完成
-- FastMCP 框架、工具缓存、长连接执行器
+- FastMCP 框架、工具缓存、连接池执行器
 - HTTP/SSE 传输支持
 - Schema/TOON 压缩、健康检查
 - 多模态内容透传、Docker 支持
 - MCP Resource 动态加载
-- client_factory 模式重构（会话隔离）
-- E2E 测试 74% 覆盖率
+- 连接池模式重构（替代 Session Isolation）
+- E2E 测试 73% 覆盖率
 - GitHub Actions 自动发布到 PyPI
+- **v0.4.0**: ServerManager 合并 Registry + Executor，连接池提升性能
 
 ### 📋 待办（P1 高优先级）
 - （暂无高优先级待办）

@@ -12,7 +12,7 @@ import pytest
 from fastmcp import Client
 
 from mcpx.__main__ import McpServerConfig, ProxyConfig, create_server, load_config
-from mcpx.registry import Registry
+from mcpx.server import ServerManager
 
 
 def _extract_text_content(result) -> str:
@@ -201,8 +201,7 @@ class TestMCPXClientE2E:
 
         async with Client(mcp_server) as client:
             result = await client.call_tool(
-                "invoke",
-                arguments={"method": "any_server.any_tool", "arguments": {}}
+                "invoke", arguments={"method": "any_server.any_tool", "arguments": {}}
             )
 
         content = _extract_text_content(result)
@@ -231,11 +230,11 @@ class TestMCPXClientE2E:
             async with Client(mcp_server) as client2:
                 result1 = await client1.call_tool(
                     "invoke",
-                    arguments={"method": "filesystem.list_allowed_directories", "arguments": {}}
+                    arguments={"method": "filesystem.list_allowed_directories", "arguments": {}},
                 )
                 result2 = await client2.call_tool(
                     "invoke",
-                    arguments={"method": "filesystem.list_allowed_directories", "arguments": {}}
+                    arguments={"method": "filesystem.list_allowed_directories", "arguments": {}},
                 )
 
         content1 = _extract_text_content(result1)
@@ -325,11 +324,7 @@ class TestMCPXConfigFile:
 
             async with Client(mcp_server) as client:
                 result = await client.call_tool(
-                    "invoke",
-                    arguments={
-                        "method": "fs.list_allowed_directories",
-                        "arguments": {}
-                    }
+                    "invoke", arguments={"method": "fs.list_allowed_directories", "arguments": {}}
                 )
 
             content = _extract_text_content(result)
@@ -391,10 +386,7 @@ class TestMCPXErrorHandling:
         async with Client(mcp_server) as client:
             result = await client.call_tool(
                 "invoke",
-                arguments={
-                    "method": "valid-server.list_allowed_directories",
-                    "arguments": {}
-                }
+                arguments={"method": "valid-server.list_allowed_directories", "arguments": {}},
             )
 
         content = _extract_text_content(result)
@@ -489,7 +481,7 @@ class TestMCPXExecSuccess:
                 ),
             }
         )
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         test_file = Path(tmp_dir) / "mcpx_injected_registry_test.txt"
@@ -536,7 +528,7 @@ class TestMCPXExecSuccess:
                 ),
             }
         )
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         # Verify server is connected
@@ -548,7 +540,7 @@ class TestMCPXExecSuccess:
         try:
             # In new pattern, sessions are created per-request
             # So we remove the factory to simulate disconnect
-            registry._client_factories.pop("filesystem", None)
+            registry._pools.pop("filesystem", None)
 
             mcp_server = create_server(config, registry=registry)
 
@@ -585,7 +577,7 @@ class TestMCPXExecSuccess:
                 ),
             }
         )
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         # Verify client factory exists
@@ -686,11 +678,11 @@ class TestMCPXExecSuccess:
                 pass
 
 
-class TestMCPXRegistry:
-    """Tests for Registry functionality."""
+class TestMCPXServerManager:
+    """Tests for ServerManager functionality."""
 
     async def test_registry_get_tool_list_text(self):
-        """Test: Registry generates correct tool list text."""
+        """Test: ServerManager generates correct tool list text."""
         config = ProxyConfig(
             mcpServers={
                 "filesystem": McpServerConfig(
@@ -701,9 +693,9 @@ class TestMCPXRegistry:
             }
         )
 
-        from mcpx.registry import Registry
+        from mcpx.server import ServerManager
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         try:
@@ -714,7 +706,7 @@ class TestMCPXRegistry:
             await registry.close()
 
     async def test_registry_list_all_tools(self):
-        """Test: Registry.list_all_tools returns all tools from all servers."""
+        """Test: ServerManager.list_all_tools returns all tools from all servers."""
         config = ProxyConfig(
             mcpServers={
                 "filesystem": McpServerConfig(
@@ -725,9 +717,9 @@ class TestMCPXRegistry:
             }
         )
 
-        from mcpx.registry import Registry
+        from mcpx.server import ServerManager
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         try:
@@ -739,7 +731,7 @@ class TestMCPXRegistry:
             await registry.close()
 
     async def test_registry_close(self):
-        """Test: Registry.close properly closes all sessions."""
+        """Test: ServerManager.close properly closes all sessions."""
         config = ProxyConfig(
             mcpServers={
                 "filesystem": McpServerConfig(
@@ -750,9 +742,9 @@ class TestMCPXRegistry:
             }
         )
 
-        from mcpx.registry import Registry
+        from mcpx.server import ServerManager
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         assert len(registry.list_servers()) > 0
@@ -786,7 +778,7 @@ class TestMCPXHttpLifespan:
             }
         )
 
-        registry = Registry(config)
+        registry = ServerManager(config)
 
         # Create server with uninitialized registry
         mcp_server = create_server(config, registry=registry)
@@ -834,7 +826,7 @@ class TestMCPXHttpLifespan:
         )
 
         # Create registry and initialize in the SAME event loop as the test
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         # Create server with initialized registry
@@ -880,7 +872,7 @@ class TestMCPXHttpLifespan:
         )
 
         # Initialize in the same event loop
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         mcp_server = create_server(config, registry=registry)
@@ -919,10 +911,7 @@ class TestMCPXHttpLifespan:
                 # Third call - another tool call should also work
                 result3 = await client.call_tool(
                     "invoke",
-                    arguments={
-                        "method": "filesystem.list_allowed_directories",
-                        "arguments": {}
-                    },
+                    arguments={"method": "filesystem.list_allowed_directories", "arguments": {}},
                 )
                 content3 = _extract_text_content(result3)
                 # Should succeed (not an error response)
@@ -940,7 +929,7 @@ class TestProxyProviderRefactorVerification:
     """Verification tests for ProxyProvider session isolation refactoring.
 
     These tests verify the requirements from V-1 to V-8:
-    - V-1: Registry uses _client_factories, not _sessions
+    - V-1: ServerManager uses _pools, not _sessions
     - V-2: Executor uses client_factory pattern
     - V-3: Auto-recovery via session isolation
     - V-4: Interface compatibility (describe/call/resources unchanged)
@@ -948,7 +937,7 @@ class TestProxyProviderRefactorVerification:
 
     @pytest.mark.asyncio
     async def test_v1_registry_no_sessions_dict(self):
-        """V-1: Registry should not have _sessions attribute, should have _client_factories."""
+        """V-1: ServerManager should not have _sessions attribute, should have _pools."""
         tmp_dir = "/private/tmp" if Path("/private/tmp").exists() else "/tmp"
 
         config = ProxyConfig(
@@ -961,17 +950,17 @@ class TestProxyProviderRefactorVerification:
             }
         )
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         try:
-            # V-1: Should have _client_factories
-            assert hasattr(registry, "_client_factories")
-            assert "filesystem" in registry._client_factories
+            # V-1: Should have _pools
+            assert hasattr(registry, "_pools")
+            assert "filesystem" in registry._pools
 
             # V-1: Should NOT have _sessions (or it should be empty/removed)
             # Note: We check that sessions are not used as the primary mechanism
-            assert len(registry._client_factories) == 1
+            assert len(registry._pools) == 1
         finally:
             await registry.close()
 
@@ -990,7 +979,7 @@ class TestProxyProviderRefactorVerification:
             }
         )
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         try:
@@ -1020,7 +1009,7 @@ class TestProxyProviderRefactorVerification:
             }
         )
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         test_file = Path(tmp_dir) / "v3_test.txt"
@@ -1070,7 +1059,7 @@ class TestProxyProviderRefactorVerification:
             }
         )
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         test_file = Path(tmp_dir) / "v4_call_test.txt"
@@ -1111,7 +1100,7 @@ class TestProxyProviderRefactorVerification:
             }
         )
 
-        registry = Registry(config)
+        registry = ServerManager(config)
         await registry.initialize()
 
         try:

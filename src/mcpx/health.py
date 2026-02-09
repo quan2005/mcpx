@@ -192,11 +192,12 @@ class HealthChecker:
 
         while self._running:
             try:
-                # Get current server list from registry callback
-                if self._get_client_callback:
-                    # Assuming callback can also return server names
-                    # We'll update this in registry integration
-                    pass
+                # Get current server list
+                server_names = list(self._status.servers.keys())
+
+                if server_names:
+                    logger.debug(f"Running health check for {len(server_names)} server(s)")
+                    await self.check_all_servers(server_names)
 
                 await asyncio.sleep(self._check_interval)
             except asyncio.CancelledError:
