@@ -1,21 +1,24 @@
 import { useEffect, useState } from "react"
-import type { HealthStatus, Server } from "../api/client"
+import type { HealthStatus, McpxTool, Server } from "../api/client"
 import { api } from "../api/client"
 
 export default function Dashboard() {
   const [servers, setServers] = useState<Server[]>([])
   const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [mcpxTools, setMcpxTools] = useState<McpxTool[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [serversData, healthData] = await Promise.all([
+        const [serversData, healthData, toolsData] = await Promise.all([
           api.listServers(),
           api.getHealth(),
+          api.getMcpxTools(),
         ])
         setServers(serversData.servers)
         setHealth(healthData)
+        setMcpxTools(toolsData.tools)
       } catch (error) {
         console.error("Failed to load dashboard data:", error)
       } finally {
@@ -79,15 +82,74 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* MCPX Tools Reference */}
+      <div className="card">
+        <h3 className="text-lg font-semibold text-white mb-4">MCPX Tools Reference</h3>
+        <p className="text-sm text-slate-400 mb-4">
+          MCPX exposes two unified tools to interact with all your MCP servers:
+        </p>
+
+        <div className="space-y-4">
+          {mcpxTools.map((tool) => (
+            <div key={tool.name} className="bg-slate-900 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  tool.name === "invoke" ? "bg-blue-900 text-blue-300" : "bg-purple-900 text-purple-300"
+                }`}>
+                  TOOL
+                </span>
+                <h4 className="text-white font-mono font-semibold">{tool.name}</h4>
+              </div>
+
+              {/* Tool Description (docstring) */}
+              <pre className="text-slate-300 text-sm mb-4 whitespace-pre-wrap font-sans">
+                {tool.description}
+              </pre>
+
+              {/* Parameters */}
+              <div className="mb-4">
+                <span className="text-xs text-slate-500 uppercase tracking-wide">Parameters</span>
+                <div className="mt-1 font-mono text-sm space-y-1">
+                  {Object.entries(tool.input_schema.properties as Record<string, { type: string; description?: string }>).map(([paramName, paramDef]) => {
+                    const required = (tool.input_schema.required as string[])?.includes(paramName)
+                    return (
+                      <div key={paramName} className="text-slate-300">
+                        <span className="text-yellow-400">{paramName}</span>
+                        {!required && <span className="text-slate-500">?</span>}
+                        <span className="text-slate-500">: {paramDef.type}</span>
+                        {paramDef.description && (
+                          <span className="text-slate-400"> — {paramDef.description}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Dynamic Description - the real tool/resource list */}
+              {tool.dynamic_description && (
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wide">
+                    {tool.name === "invoke" ? "Available Tools" : "Available Resources"}
+                  </span>
+                  <pre className="mt-1 bg-slate-800 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap text-slate-300">
+                    {tool.dynamic_description}
+                  </pre>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Quick Connect */}
       <div className="card">
         <h3 className="text-lg font-semibold text-white mb-4">Quick Connect</h3>
+        <p className="text-sm text-slate-400 mb-2">
+          Add MCPX to your Claude Code configuration:
+        </p>
         <div className="bg-slate-900 p-4 rounded-lg font-mono text-sm text-slate-300 overflow-x-auto">
-          <p className="text-slate-500 mb-2"># Connect via MCP Inspector</p>
-          <p>npx @anthropic-ai/mcp-inspector</p>
-          <p className="text-slate-500 mt-4 mb-2"># Or use with Claude Desktop</p>
-          <p>Add to ~/Library/Application Support/Claude/claude_desktop_config.json:</p>
-          <pre className="mt-2 text-blue-300">
+          <pre>
 {`{
   "mcpServers": {
     "mcpx": {

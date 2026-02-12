@@ -285,7 +285,15 @@ class ConfigManager:
         # 处理服务器配置更新
         if "mcpServers" in updates:
             new_servers = updates["mcpServers"]
-            # 保留现有服务器的 enabled 状态
+
+            # 删除不在新配置中的服务器
+            servers_to_remove = [
+                name for name in self._config.mcpServers if name not in new_servers
+            ]
+            for name in servers_to_remove:
+                del self._config.mcpServers[name]
+
+            # 添加或更新服务器
             for name, config_data in new_servers.items():
                 if name in self._config.mcpServers:
                     existing = self._config.mcpServers[name]

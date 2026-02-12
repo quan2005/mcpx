@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react"
 import type { Config } from "../api/client"
 import { api } from "../api/client"
+import { useToast } from "../contexts/ToastContext"
 
 export default function Settings() {
   const [config, setConfig] = useState<Config | null>(null)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+
+  const { showToast } = useToast()
 
   useEffect(() => {
     api.getConfig().then(setConfig)
@@ -16,14 +17,12 @@ export default function Settings() {
     if (!config) return
 
     setSaving(true)
-    setMessage(null)
-    setError(null)
 
     try {
       await api.updateConfig(config)
-      setMessage("Configuration saved and reloaded successfully")
+      showToast({ type: "success", message: "Configuration saved and reloaded successfully" })
     } catch (err) {
-      setError(String(err))
+      showToast({ type: "error", message: `Failed to save configuration: ${err}` })
     } finally {
       setSaving(false)
     }
@@ -43,13 +42,6 @@ export default function Settings() {
         <h2 className="text-2xl font-bold text-white">Settings</h2>
         <p className="text-slate-400">Configure MCPX proxy settings</p>
       </div>
-
-      {message && (
-        <div className="p-4 bg-green-900 text-green-400 rounded-lg">{message}</div>
-      )}
-      {error && (
-        <div className="p-4 bg-red-900 text-red-400 rounded-lg">{error}</div>
-      )}
 
       <div className="space-y-6">
         {/* Health Check Settings */}
@@ -188,7 +180,7 @@ export default function Settings() {
         <div className="card">
           <h3 className="text-lg font-semibold text-white mb-4">Servers Configuration</h3>
           <p className="text-sm text-slate-400 mb-4">
-            Edit config.json directly to add or modify servers. Changes here will reload the server.
+            Go to <a href="/servers" className="text-blue-400 hover:underline">Servers</a> page to add, edit, or delete servers.
           </p>
           <pre className="bg-slate-900 p-4 rounded-lg text-sm text-slate-300 overflow-auto max-h-96">
             {JSON.stringify(config.mcpServers, null, 2)}

@@ -393,17 +393,49 @@ def main() -> None:
     # Handle different startup modes
     if args.desktop:
         # Desktop mode: run in pywebview
-        _run_desktop_mode(app, args.host, actual_port)
+        _run_desktop_mode(app, args.host, actual_port, manager)
     elif args.open:
         # Browser mode: open browser and run server
-        _run_browser_mode(app, args.host, actual_port)
+        _run_browser_mode(app, args.host, actual_port, manager)
     else:
         # Normal mode: just run server
         uvicorn.run(app, host=args.host, port=actual_port)
 
 
-def _run_browser_mode(app: Any, host: str, port: int) -> None:
-    """Run server and open browser."""
+def _wait_for_initialization(manager: ServerManager, timeout: float = 60.0) -> bool:
+    """Wait for manager initialization to complete.
+
+    Args:
+        manager: ServerManager instance
+        timeout: Maximum time to wait in seconds
+
+    Returns:
+        True if initialized, False if timeout
+    """
+    import time
+
+    start_time = time.time()
+    last_log_time = start_time
+    while time.time() - start_time < timeout:
+        if manager._initialized:
+            return True
+        # Log progress every 5 seconds
+        if time.time() - last_log_time > 5:
+            elapsed = time.time() - start_time
+            logger.info(f"Still initializing... ({elapsed:.0f}s elapsed)")
+            last_log_time = time.time()
+        time.sleep(0.1)
+
+    # Log connected servers for debugging
+    connected = manager.list_servers()
+    total = len(manager._config.mcpServers)
+    logger.warning(f"Initialization timeout: {len(connected)}/{total} servers connected")
+
+    return False
+
+
+def _run_browser_mode(app: Any, host: str, port: int, manager: ServerManager) -> None:
+    """Run server and open browser after initialization."""
     import threading
     import time
     import webbrowser
@@ -417,8 +449,14 @@ def _run_browser_mode(app: Any, host: str, port: int) -> None:
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
 
-    # Wait for server to start
-    time.sleep(1)
+    # Wait for manager initialization to complete
+    logger.info("Waiting for server initialization...")
+    if not _wait_for_initialization(manager):
+        logger.error("Server initialization timeout")
+        return
+
+    # Additional small delay to ensure HTTP server is ready
+    time.sleep(0.5)
 
     # Open browser
     url = f"http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}/"
@@ -433,7 +471,7 @@ def _run_browser_mode(app: Any, host: str, port: int) -> None:
         logger.info("Shutting down...")
 
 
-def _run_desktop_mode(app: Any, host: str, port: int) -> None:
+def _run_desktop_mode(app: Any, host: str, port: int, manager: ServerManager) -> None:
     """Run server in desktop window using pywebview."""
     import threading
     import time
@@ -453,8 +491,14 @@ def _run_desktop_mode(app: Any, host: str, port: int) -> None:
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
 
-    # Wait for server to start
-    time.sleep(1)
+    # Wait for manager initialization to complete
+    logger.info("Waiting for server initialization...")
+    if not _wait_for_initialization(manager):
+        logger.error("Server initialization timeout")
+        return
+
+    # Additional small delay to ensure HTTP server is ready
+    time.sleep(0.5)
 
     # Create desktop window
     url = f"http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}/"

@@ -1,4 +1,4 @@
-"""REST API 路由 - 提供 Dashboard 所需的 14 个端点。"""
+"""REST API 路由 - 提供 Dashboard 所需的端点。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from mcpx.config_manager import ConfigManager
+from mcpx.description import generate_resources_description, generate_tools_description
 from mcpx.server import ServerManager
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,12 @@ class APIHandler:
                     "last_check": health["last_check"],
                     "consecutive_failures": health["consecutive_failures"],
                 }
+
+            # 添加工具和资源计数
+            tools = self._manager.list_tools(name)
+            resources = self._manager.list_resources(name)
+            server_data["tools_count"] = len(tools)
+            server_data["resources_count"] = len(resources)
 
             servers.append(server_data)
 
@@ -427,6 +434,62 @@ class APIHandler:
             logger.error(f"Error updating config: {e}")
             return JSONResponse({"error": str(e)}, status_code=500)
 
+    # MCPX 工具
+
+    async def get_mcpx_tools(self, request: Request) -> JSONResponse:
+        """GET /mcpx-tools - 获取 MCPX 工具的真实描述信息。"""
+        # 生成动态的工具描述
+        tools_desc = generate_tools_description(self._manager)
+        resources_desc = generate_resources_description(self._manager)
+
+        # invoke 和 read 工具的 schema 定义
+        invoke_schema = {
+            "name": "invoke",
+            "description": "Invoke an MCP tool.\n\nArgs:\n    method: Method identifier in \"server.tool\" format\n    arguments: Tool arguments\n\nExample:\n    invoke(method=\"filesystem.read_file\", arguments={\"path\": \"/tmp/file.txt\"})\n\nError Handling:\n    When invoke fails, it returns helpful information:\n    - Server not found: returns error + available_servers list\n    - Tool not found: returns error + available_tools list\n    - Invalid arguments: returns error + tool_schema",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "description": "Method identifier in \"server.tool\" format",
+                    },
+                    "arguments": {
+                        "type": "object",
+                        "description": "Tool-specific arguments",
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["method"],
+            },
+            "dynamic_description": tools_desc,  # 动态生成的工具列表
+        }
+
+        read_schema = {
+            "name": "read",
+            "description": "Read a resource from MCP servers.\n\nArgs:\n    server_name: Server name (required)\n    uri: Resource URI (required)\n\nReturns:\n    - Text resource: string content\n    - Binary resource: dict with uri, mime_type, and blob (base64)\n    - Multiple contents: list of content items\n\nExamples:\n    read(server_name=\"filesystem\", uri=\"file:///tmp/file.txt\")",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "server_name": {
+                        "type": "string",
+                        "description": "Server name (required)",
+                    },
+                    "uri": {
+                        "type": "string",
+                        "description": "Resource URI (required)",
+                    },
+                },
+                "required": ["server_name", "uri"],
+            },
+            "dynamic_description": resources_desc,  # 动态生成的资源列表
+        }
+
+        return JSONResponse({
+            "tools": [invoke_schema, read_schema],
+            "tools_description": tools_desc,
+            "resources_description": resources_desc,
+        })
+
 
 def create_api_routes(manager: ServerManager, config_manager: ConfigManager) -> list[Route]:
     """创建 API 路由列表。
@@ -460,4 +523,6 @@ def create_api_routes(manager: ServerManager, config_manager: ConfigManager) -> 
         # 配置
         Route("/config", handler.get_config, methods=["GET"]),
         Route("/config", handler.update_config, methods=["PUT"]),
+        # MCPX 工具
+        Route("/mcpx-tools", handler.get_mcpx_tools, methods=["GET"]),
     ]

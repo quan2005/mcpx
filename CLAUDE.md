@@ -245,13 +245,30 @@ Starlette App
 ```
 
 **REST API 端点**：
-- `GET /servers` - 列出所有服务器
-- `POST /servers/{name}/toggle` - 启停服务器（增量操作）
-- `GET /tools` - 列出所有工具
-- `POST /tools/{server}/{tool}/toggle` - 启停工具
-- `GET /resources` - 列出所有资源
-- `GET /health` - 健康总览
-- `PUT /config` - 保存配置并热重载
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/servers` | GET | 列出所有服务器 |
+| `/servers/{name}` | GET | 获取服务器详情 |
+| `/servers/{name}/toggle` | POST | 启停服务器 |
+| `/tools` | GET | 列出所有工具 |
+| `/tools/{server}/{tool}` | GET | 获取工具详情（含 schema） |
+| `/tools/{server}/{tool}/toggle` | POST | 启停工具 |
+| `/invoke` | POST | 执行工具 |
+| `/resources` | GET | 列出所有资源 |
+| `/read` | POST | 读取资源内容 |
+| `/health` | GET | 健康总览 |
+| `/health/{server}` | GET | 服务器健康状态 |
+| `/health/{server}/check` | POST | 手动健康检查 |
+| `/config` | GET | 获取配置 |
+| `/config` | PUT | 保存配置并热重载 |
+
+**前端组件**（`gui/src/components/`）：
+- `Toast.tsx` - Toast 通知组件（success/error/warning/info）
+- `ConfirmDialog.tsx` - 确认对话框（danger/warning/info 变体）
+- `ToolDetailModal.tsx` - 工具详情模态框（schema + 测试界面）
+- `ToolTester.tsx` - 工具执行测试界面（动态参数表单）
+- `ServerEditor.tsx` - 服务器配置编辑器（添加/编辑/删除）
 
 **CLI 参数**：
 - `--gui` - 启用 Dashboard

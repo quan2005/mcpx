@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
-import type { Tool } from "../api/client"
+import type { Tool, ToolDetail } from "../api/client"
 import { api } from "../api/client"
+import { ToolDetailModal } from "../components/ToolDetailModal"
+import { useToast } from "../contexts/ToastContext"
 
 export default function Tools() {
   const [tools, setTools] = useState<Tool[]>([])
@@ -8,6 +10,9 @@ export default function Tools() {
   const [serverFilter, setServerFilter] = useState("")
   const [servers, setServers] = useState<string[]>([])
   const [loading, setLoading] = useState<string | null>(null)
+  const [selectedTool, setSelectedTool] = useState<{ server: string; tool: string } | null>(null)
+  const [toolDetail, setToolDetail] = useState<ToolDetail | null>(null)
+  const { showToast } = useToast()
 
   const loadTools = async () => {
     const data = await api.listTools(serverFilter || undefined)
@@ -26,10 +31,26 @@ export default function Tools() {
     const toolKey = `${server}.${name}`
     setLoading(toolKey)
     try {
-      await api.toggleTool(server, name)
+      const result = await api.toggleTool(server, name)
       await loadTools()
+      showToast({
+        type: result.enabled ? "success" : "warning",
+        message: `Tool "${name}" ${result.enabled ? "enabled" : "disabled"}`,
+      })
+    } catch (err) {
+      showToast({ type: "error", message: `Failed to toggle tool: ${err}` })
     } finally {
       setLoading(null)
+    }
+  }
+
+  const handleToolClick = async (server: string, tool: string) => {
+    setSelectedTool({ server, tool })
+    try {
+      const detail = await api.getTool(server, tool)
+      setToolDetail(detail)
+    } catch (err) {
+      showToast({ type: "error", message: `Failed to load tool details: ${err}` })
     }
   }
 
@@ -90,7 +111,8 @@ export default function Tools() {
                 {serverTools.map((tool) => (
                   <div
                     key={`${tool.server}.${tool.name}`}
-                    className="flex items-center justify-between p-3 bg-slate-900 rounded-lg"
+                    className="flex items-center justify-between p-3 bg-slate-900 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors"
+                    onClick={() => handleToolClick(tool.server, tool.name)}
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
@@ -101,15 +123,19 @@ export default function Tools() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-slate-400 mt-1">{tool.description}</p>
+                      <p className="text-sm text-slate-400 mt-1 line-clamp-2">{tool.description}</p>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer ml-4">
                       <input
                         type="checkbox"
                         className="toggle"
                         checked={tool.enabled}
-                        onChange={() => handleToggle(tool.server, tool.name)}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          handleToggle(tool.server, tool.name)
+                        }}
                         disabled={loading === `${tool.server}.${tool.name}`}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </label>
                   </div>
@@ -119,6 +145,22 @@ export default function Tools() {
           ))
         )}
       </div>
+
+      {/* Tool Detail Modal */}
+      {selectedTool && (
+        <ToolDetailModal
+          isOpen={true}
+          server={selectedTool.server}
+          tool={selectedTool.tool}
+          enabled={toolDetail?.enabled ?? tools.find(t => t.server === selectedTool.server && t.name === selectedTool.tool)?.enabled ?? true}
+          onClose={() => {
+            setSelectedTool(null)
+            setToolDetail(null)
+          }}
+          onToggle={() => handleToggle(selectedTool.server, selectedTool.tool)}
+          onRefresh={loadTools}
+        />
+      )}
     </div>
   )
 }

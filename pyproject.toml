@@ -1,6 +1,6 @@
 [project]
 name = "mcpx-toolkit"
-version = "0.5.0"
+version = "0.6.0"
 description = "MCP proxy server - aggregate multiple MCP servers into 3 progressive tools"
 readme = "README.md"
 requires-python = ">=3.12"

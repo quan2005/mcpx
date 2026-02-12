@@ -403,10 +403,50 @@ class ServerManager:
             return False
 
     async def reload(self) -> None:
-        """全量重载：关闭所有连接并重新初始化。"""
-        await self.close()
-        await self.initialize()
-        logger.info("Server manager reloaded")
+        """智能重载：只处理变化的服务器，保留未变化的连接。"""
+        if not self._initialized:
+            # 未初始化时，执行完整初始化
+            await self.initialize()
+            logger.info("Server manager initialized")
+            return
+
+        # 获取当前配置中的服务器列表
+        current_servers = set(self._config.mcpServers.keys())
+        connected_servers = set(self._pools.keys())
+
+        # 找出需要删除的服务器（在连接中但不在配置中）
+        servers_to_remove = connected_servers - current_servers
+        for name in servers_to_remove:
+            logger.info(f"Removing disconnected server '{name}'")
+            await self.disconnect_server(name)
+
+        # 找出需要添加的服务器（在配置中但未连接）
+        servers_to_add = current_servers - connected_servers
+        for name in servers_to_add:
+            config = self._config.mcpServers[name]
+            if config.enabled:
+                logger.info(f"Adding new server '{name}'")
+                await self.connect_server(name)
+
+        # 同步健康检查器状态
+        if self._config.health_check_enabled:
+            # 获取健康检查器当前管理的服务器
+            health_servers = set(self._health_checker._status.servers.keys())
+
+            # 移除不应存在的服务器
+            for name in health_servers - current_servers:
+                self._health_checker.remove_server(name)
+
+            # 添加新启用的服务器
+            for name in servers_to_add:
+                if name in self._pools:  # 只有成功连接的才添加
+                    self._health_checker.add_server(name)
+
+        logger.info(
+            f"Server manager reloaded: "
+            f"removed={len(servers_to_remove)}, added={len(servers_to_add)}, "
+            f"total={len(self._pools)}"
+        )
 
     def is_tool_enabled(self, server_name: str, tool_name: str) -> bool:
         """检查工具是否启用。

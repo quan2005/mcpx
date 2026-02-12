@@ -91,6 +91,13 @@ export interface Config {
   include_structured_content: boolean
 }
 
+export interface McpxTool {
+  name: string
+  description: string
+  input_schema: Record<string, unknown>
+  dynamic_description?: string  // 动态生成的工具/资源列表
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${url}`, {
     ...options,
@@ -167,4 +174,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(config),
     }),
+
+  // MCPX Tools
+  getMcpxTools: () => fetchJson<{
+    tools: McpxTool[]
+    tools_description: string
+    resources_description: string
+  }>("/mcpx-tools"),
 }

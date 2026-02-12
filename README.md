@@ -350,11 +350,17 @@ mcpx-toolkit --gui --desktop config.json
 | 页面 | 功能 |
 |------|------|
 | **Dashboard** | 总览所有服务器状态、工具和资源数量 |
-| **Servers** | 查看服务器详情，启用/禁用服务器（增量操作） |
-| **Tools** | 浏览和搜索工具，启用/禁用单个工具 |
+| **Servers** | 查看服务器详情，添加/编辑/删除服务器，启用/禁用服务器 |
+| **Tools** | 浏览和搜索工具，查看工具 Schema，测试工具执行，启用/禁用单个工具 |
 | **Resources** | 浏览资源，点击预览内容 |
 | **Health** | 查看健康状态，手动触发健康检查 |
 | **Settings** | 修改配置并热重载 |
+
+**新增功能（v0.6.0）**：
+- 工具详情模态框：查看工具 Schema、测试工具执行
+- 服务器配置编辑器：添加/编辑/删除服务器
+- Toast 通知：操作反馈
+- 确认对话框：删除操作确认
 
 ### CLI 参数
 
@@ -498,10 +504,11 @@ Claude Desktop
 - 多模态内容透传、Docker 支持
 - MCP Resource 动态加载
 - 连接池模式重构（替代 Session Isolation）
-- E2E 测试 73% 覆盖率
+- E2E 测试 70%+ 覆盖率
 - GitHub Actions 自动发布到 PyPI
 - **v0.4.0**: ServerManager 合并 Registry + Executor，连接池提升性能
-- **v0.5.0**: Web Dashboard - 浏览器管理服务器、工具和资源
+- **v0.5.0**: Web Dashboard 基础版本 - 浏览器管理服务器、工具和资源
+- **v0.6.0**: Dashboard 增强版本 - 工具详情+测试、服务器配置编辑器、Toast通知
 
 ### 📋 待办（P1 高优先级）
 - （暂无高优先级待办）
