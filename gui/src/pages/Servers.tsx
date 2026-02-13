@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import type { Config, Server } from "../api/client"
-import { api } from "../api/client"
+import { api, invalidateCache } from "../api/client"
 import { useConfirmDialog } from "../components/ConfirmDialog"
 import { ServerEditor, type ServerConfig } from "../components/ServerEditor"
 import { useToast } from "../contexts/ToastContext"
@@ -35,6 +35,8 @@ export default function Servers() {
     setLoading(name)
     try {
       const result = await api.toggleServer(name)
+      // Invalidate cache and reload
+      invalidateCache(/\/servers/)
       await loadServers()
       showToast({
         type: result.enabled ? "success" : "warning",
@@ -64,6 +66,9 @@ export default function Servers() {
       }
       delete newConfig.mcpServers[name]
       await api.updateConfig(newConfig)
+
+      // Invalidate all cache after config change
+      invalidateCache()
 
       // 立即刷新本地状态
       setConfig(newConfig)
@@ -109,6 +114,9 @@ export default function Servers() {
         },
       }
       await api.updateConfig(newConfig)
+
+      // Invalidate all cache after config change
+      invalidateCache()
 
       // 立即刷新本地状态
       setConfig(newConfig)

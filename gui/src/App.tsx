@@ -1,33 +1,47 @@
-import { useEffect, useState } from "react"
-import { Link, Route, BrowserRouter as Router, Routes, useLocation } from "react-router-dom"
-import type { Server } from "./api/client"
-import { api } from "./api/client"
-import { ToastProvider } from "./contexts/ToastContext"
-import Dashboard from "./pages/Dashboard"
-import Health from "./pages/Health"
-import Resources from "./pages/Resources"
-import Servers from "./pages/Servers"
-import Settings from "./pages/Settings"
-import Tools from "./pages/Tools"
+import { useEffect, useState } from "react";
+import {
+  Link,
+  Route,
+  BrowserRouter as Router,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+import type { Server } from "./api/client";
+import { api } from "./api/client";
+import { ToastProvider } from "./contexts/ToastContext";
+import Dashboard from "./pages/Dashboard";
+import Health from "./pages/Health";
+import Resources from "./pages/Resources";
+import Servers from "./pages/Servers";
+import Settings from "./pages/Settings";
+import Tools from "./pages/Tools";
+
+// Version injected at build time from package.json
+declare const __APP_VERSION__: string;
 
 function Sidebar() {
-  const location = useLocation()
-  const [servers, setServers] = useState<Server[]>([])
+  const location = useLocation();
+  const [servers, setServers] = useState<Server[]>([]);
 
   useEffect(() => {
-    api.listServers().then((data) => setServers(data.servers))
-  }, [])
+    api.listServers().then((data) => setServers(data.servers));
+  }, []);
 
-  const connectedCount = servers.filter((s) => s.connected).length
+  const connectedCount = servers.filter((s) => s.connected).length;
 
   const navItems = [
     { path: "/", label: "Dashboard", icon: "📊" },
-    { path: "/servers", label: "Servers", icon: "🖥️", badge: `${connectedCount}/${servers.length}` },
+    {
+      path: "/servers",
+      label: "Servers",
+      icon: "🖥️",
+      badge: `${connectedCount}/${servers.length}`,
+    },
     { path: "/tools", label: "Tools", icon: "🔧" },
     { path: "/resources", label: "Resources", icon: "📁" },
     { path: "/health", label: "Health", icon: "❤️" },
     { path: "/settings", label: "Settings", icon: "⚙️" },
-  ]
+  ];
 
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-700 flex flex-col">
@@ -65,7 +79,7 @@ function Sidebar() {
 
       <div className="p-4 border-t border-slate-700">
         <div className="text-xs text-slate-500">
-          <p>v0.6.0</p>
+          <p>v{__APP_VERSION__}</p>
           <a
             href="https://github.com/quan2005/mcpx"
             target="_blank"
@@ -77,7 +91,7 @@ function Sidebar() {
         </div>
       </div>
     </aside>
-  )
+  );
 }
 
 function App() {
@@ -99,7 +113,7 @@ function App() {
         </div>
       </ToastProvider>
     </Router>
-  )
+  );
 }
 
-export default App
+export default App;
